@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
@@ -14,13 +15,19 @@ import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Data.IORef
 import Data.Map.Strict as Map (Map, alterF, empty)
+import Data.Text
 import Data.Tuple (swap)
 import Data.UUID
 import Data.UUID.V4
 import Network.Wai.Handler.Warp (run)
 import Servant
   ( Application,
+    BasicAuth,
+    BasicAuthCheck (BasicAuthCheck),
+    BasicAuthData (BasicAuthData),
+    BasicAuthResult (Authorized, Unauthorized),
     Capture,
+    Context (EmptyContext, (:.)),
     Delete,
     Get,
     Handler,
@@ -31,13 +38,13 @@ import Servant
     ServerError,
     err404,
     err500,
-    serve,
+    serveWithContext,
     type (:>),
   )
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
 import Servant.Server.Generic (AsServerT)
 
-type API = "counter" :> NamedRoutes CountersAPI
+type API = BasicAuth "foo-realm" User :> "counter" :> NamedRoutes CountersAPI
 
 data CountersAPI mode = CountersAPI
   { counters :: mode :- Capture "counterId" CounterId :> NamedRoutes CounterAPI,
@@ -56,6 +63,9 @@ type CounterId = UUID
 
 type Counter = Int
 
+newtype User = User {userName :: Text}
+  deriving (Eq, Show)
+
 makeCounterAPI :: WithExistingResource Counter -> CounterAPI (AsServerT Handler)
 makeCounterAPI withExistingResource =
   CounterAPI
@@ -64,8 +74,8 @@ makeCounterAPI withExistingResource =
       delete = withExistingResource (\_ -> (pure (), Nothing))
     }
 
-makeCountersAPI :: IORef (Map CounterId Int) -> CountersAPI (AsServerT Handler)
-makeCountersAPI ref =
+makeCountersAPI :: IORef (Map CounterId Int) -> User -> CountersAPI (AsServerT Handler)
+makeCountersAPI ref user =
   CountersAPI
     { counters = \counterId -> do
         makeCounterAPI (handleMissing (withResourceInMap ref counterId)),
@@ -75,6 +85,20 @@ makeCountersAPI ref =
           Nothing -> (Right uuid, Just 0)
           Just _ -> (Left err500, Nothing) -- UUID collision!
     }
+
+--
+-- AUTHENTICATION
+-- https://docs.servant.dev/en/stable/tutorial/Authentication.html#
+authCheck :: BasicAuthCheck User
+authCheck =
+  let check (BasicAuthData username password) =
+        if username == "servant" && password == "server"
+          then return (Authorized (User "servant"))
+          else return Unauthorized
+   in BasicAuthCheck check
+
+basicAuthServerContext :: Context (BasicAuthCheck User ': '[])
+basicAuthServerContext = authCheck :. EmptyContext
 
 --
 -- SOME API-GENERIC HELPERS
@@ -109,5 +133,5 @@ main :: IO ()
 main = do
   ref <- newIORef Map.empty
   let app :: Application
-      app = serve (Proxy @API) (makeCountersAPI ref)
+      app = serveWithContext (Proxy @API) basicAuthServerContext (makeCountersAPI ref)
   run 8000 app
