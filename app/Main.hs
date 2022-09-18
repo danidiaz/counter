@@ -28,7 +28,8 @@ type CounterId = Int
 
 data  Counters mode = Counters
   {
-    counters :: mode :- "counter" :> Capture "counterId" Int :> NamedRoutes Counter
+    counters :: mode :- Capture "counterId" Int :> NamedRoutes Counter,
+    create :: mode :- Post '[JSON] ()
   }
   deriving stock Generic
 
@@ -38,7 +39,7 @@ data Counter mode = Counter
   }
   deriving stock (Generic)
 
-type CountersAPI = NamedRoutes Counters
+type CountersAPI = "counter" :> NamedRoutes Counters
 
 counterServer :: IORef Int -> Counters (AsServerT Handler)
 counterServer ref = Counters {
