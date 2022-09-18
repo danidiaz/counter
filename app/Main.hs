@@ -80,11 +80,15 @@ makeCountersAPI ref =
 -- SOME API-GENERIC HELPERS
 -- Not really related to named routes.
 
+-- The callback receives a resource if it exists, and returns a result or an
+-- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
+-- if the resource should be updated.
 type WithResource r = forall b. (Maybe r -> (Either ServerError b, Maybe r)) -> Handler b
 
+-- Like 'WithResource' but we assume the resource exists.
 type WithExistingResource r = forall b. (r -> (Either ServerError b, Maybe r)) -> Handler b
 
--- | Handler checking that the resource exists, and throwing 404 if it doesn't.
+-- | Takes care of checking if the resource exists, throwing 404 if it doesn't.
 handleMissing :: WithResource r -> WithExistingResource r
 handleMissing mightNotExist callback =
   mightNotExist
