@@ -10,6 +10,9 @@ module Main where
 import Control.Monad.IO.Class
 import Data.IORef
 import Network.Wai.Handler.Warp (run)
+import Data.Map.Strict as Map
+import Data.Set as Set
+
 import Servant
   ( Application,
     Get,
@@ -19,42 +22,67 @@ import Servant
     Post,
     Proxy (Proxy),
     serve,
-    type (:>), Capture,
+    type (:>), Capture, err404,
   )
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
 import Servant.Server.Generic (AsServerT)
+import Control.Monad.Error.Class
 
 type CounterId = Int
 
-data  Counters mode = Counters
+data CountersAPI mode = CountersAPI
   {
-    counters :: mode :- Capture "counterId" Int :> NamedRoutes Counter,
-    create :: mode :- Post '[JSON] ()
+    withCounter :: mode :- Capture "counterId" Int :> NamedRoutes CounterAPI,
+    create :: mode :- Post '[JSON] CounterId
   }
   deriving stock Generic
 
-data Counter mode = Counter
+data CounterAPI mode = CounterAPI
   { increase :: mode :- "increase" :> Post '[JSON] (),
     query :: mode :- Get '[JSON] Int
   }
   deriving stock (Generic)
 
-type CountersAPI = "counter" :> NamedRoutes Counters
+type API = "counter" :> NamedRoutes CountersAPI
 
-counterServer :: IORef Int -> Counters (AsServerT Handler)
-counterServer ref = Counters {
-  counters = \counterId ->
-    Counter
-      { increase = liftIO do
-          modifyIORef' ref succ,
-        query = liftIO do
-          readIORef ref
-      }
+makeCountersAPI :: IORef (Map CounterId Int) -> CountersAPI (AsServerT Handler)
+makeCountersAPI ref = CountersAPI {
+  withCounter = \counterId ->
+    CounterAPI
+      { increase = do
+          r <- liftIO 
+            do atomicModifyIORef' ref \counterMap ->
+                  case Map.lookup counterId counterMap of
+                    Nothing -> do
+                      (counterMap, Left err404)
+                    Just counterValue ->  do
+                      (Map.insert counterId (succ counterValue) counterMap, Right ())
+          liftEither r,
+        query = do
+          r <- liftIO 
+            do atomicModifyIORef' ref \counterMap ->
+                  case Map.lookup counterId counterMap of
+                    Nothing -> do
+                      (counterMap, Left err404)
+                    Just counterValue ->  do
+                      (counterMap, Right counterValue)
+          liftEither r
+      },
+  create = do
+      liftIO 
+        do atomicModifyIORef' ref \counterMap ->
+              case Set.lookupMax (Map.keysSet counterMap) of
+                Nothing -> do
+                  let nextCounterId = 0
+                  (Map.insert nextCounterId 0 counterMap, nextCounterId)
+                Just maxCounterId ->  do
+                  let nextCounterId = succ maxCounterId
+                  (Map.insert nextCounterId 0 counterMap, nextCounterId)
 }
 
 main :: IO ()
 main = do
-  ref <- newIORef 0
+  ref <- newIORef Map.empty
   let app :: Application
-      app = serve (Proxy @CountersAPI) (counterServer ref)
+      app = serve (Proxy @API) (makeCountersAPI ref)
   run 8000 app
