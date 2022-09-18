@@ -48,9 +48,9 @@ data CounterAPI mode = CounterAPI
 
 type API = "counter" :> NamedRoutes CountersAPI
 
-type UseCounter = forall b. (Counter -> (Maybe Counter, b)) -> Handler b
+type UseResource r = forall b . (r -> (Maybe r, b)) -> Handler b
 
-makeCounterAPI :: UseCounter -> CounterAPI (AsServerT Handler)
+makeCounterAPI :: UseResource Counter -> CounterAPI (AsServerT Handler)
 makeCounterAPI useCounter =
     CounterAPI
       { increase = useCounter (\c -> (Just (succ c),())),
@@ -61,7 +61,7 @@ makeCounterAPI useCounter =
 makeCountersAPI :: IORef (Map CounterId Int) -> CountersAPI (AsServerT Handler)
 makeCountersAPI ref = CountersAPI {
   withCounter = \counterId -> do
-    let useCounter :: UseCounter
+    let useCounter :: UseResource Counter
         useCounter callback = 
             do r <- liftIO 
                   do atomicModifyIORef' ref \counterMap ->
