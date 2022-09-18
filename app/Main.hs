@@ -4,6 +4,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Main where
 
@@ -29,6 +31,7 @@ import Servant.Server.Generic (AsServerT)
 import Control.Monad.Error.Class
 
 type CounterId = Int
+type Counter = Int
 
 data CountersAPI mode = CountersAPI
   {
@@ -45,29 +48,35 @@ data CounterAPI mode = CounterAPI
 
 type API = "counter" :> NamedRoutes CountersAPI
 
+type UseCounter = forall b. (Counter -> (Maybe Counter, b)) -> Handler b
+
+makeCounterAPI :: UseCounter -> CounterAPI (AsServerT Handler)
+makeCounterAPI useCounter =
+    CounterAPI
+      { increase = useCounter (\c -> (Just (succ c),())),
+        query = useCounter (\c -> (Just c,c))
+      }
+
+
 makeCountersAPI :: IORef (Map CounterId Int) -> CountersAPI (AsServerT Handler)
 makeCountersAPI ref = CountersAPI {
-  withCounter = \counterId ->
-    CounterAPI
-      { increase = do
-          r <- liftIO 
-            do atomicModifyIORef' ref \counterMap ->
-                  case Map.lookup counterId counterMap of
-                    Nothing -> do
-                      (counterMap, Left err404)
-                    Just counterValue ->  do
-                      (Map.insert counterId (succ counterValue) counterMap, Right ())
-          liftEither r,
-        query = do
-          r <- liftIO 
-            do atomicModifyIORef' ref \counterMap ->
-                  case Map.lookup counterId counterMap of
-                    Nothing -> do
-                      (counterMap, Left err404)
-                    Just counterValue ->  do
-                      (counterMap, Right counterValue)
-          liftEither r
-      },
+  withCounter = \counterId -> do
+    let useCounter :: UseCounter
+        useCounter callback = 
+            do r <- liftIO 
+                  do atomicModifyIORef' ref \counterMap ->
+                      case Map.lookup counterId counterMap of
+                        Nothing -> do
+                          (counterMap, Left err404)
+                        Just counterValue -> do
+                          let (c',b) = callback counterValue 
+                          case c' of
+                            Nothing -> 
+                              (Map.delete counterId counterMap, Right b)
+                            Just newCounter ->
+                              (Map.insert counterId newCounter counterMap, Right b)
+               liftEither r
+    makeCounterAPI useCounter,
   create = do
       liftIO 
         do atomicModifyIORef' ref \counterMap ->
