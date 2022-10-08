@@ -1,5 +1,5 @@
 {-# LANGUAGE RankNTypes, FlexibleInstances #-}
-module DiagnosticContext where
+module HandlerContext where
 
 import Data.Typeable
 
