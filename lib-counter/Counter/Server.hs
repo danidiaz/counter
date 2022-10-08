@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Counter.Server where
@@ -24,6 +25,12 @@ import Servant.Server
   
 import Servant.Server.Extra
 import Servant.Server.Generic (AsServerT)
+import HandlerContext
+import Control.Monad.Trans.Reader
+import Data.Kind
+
+type M :: Type -> Type
+type M = ReaderT HandlerContext Handler
 
 makeCounterServer :: WithExistingResource Counter -> CounterAPI (AsServerT Handler)
 makeCounterServer withExistingResource =
