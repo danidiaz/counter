@@ -1,7 +1,20 @@
+{-# LANGUAGE RankNTypes, FlexibleInstances #-}
 module DiagnosticContext where
 
 import Data.Typeable
 
-type RouteName = String
+type FieldName = String
 
-type NestedRoute = [(TypeRep, RouteName)]
+type HandlerContext = [(TypeRep, FieldName)]
+
+class HasHandlerContext e where
+    -- | A lens from the environment to the call stack.
+
+    handlerContext :: forall f . Functor f => (HandlerContext -> f HandlerContext) -> e -> f e
+
+-- | The trivial case, useful when 'HandlerContext' is the environment type
+
+-- of a 'Control.Monad.Reader.ReaderT'.
+
+instance HasHandlerContext HandlerContext where
+    handlerContext = id
