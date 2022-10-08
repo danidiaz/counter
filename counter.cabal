@@ -47,3 +47,11 @@ library lib-servant-server-extra
                       servant-server                     >= 0.19.1 && < 0.20,
                       containers                         >= 0.6.4 && < 0.7,
                       mtl                                >= 2.2.2 && < 2.3,
+
+library lib-dc
+    import:           warnings
+    exposed-modules:  DiagnosticContext
+    hs-source-dirs:   lib-diagnostic-context
+    build-depends:    containers                         >= 0.6.4 && < 0.7,
+                      mtl                                >= 2.2.2 && < 2.3,
+                      transformers
