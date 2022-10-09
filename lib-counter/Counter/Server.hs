@@ -1,4 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -53,11 +55,24 @@ import Data.Map.Strict qualified as Map
 import Data.Tuple (swap)
 import Dep.Has
 import Dep.Env
+import Control.Lens (view, Lens')
+import GHC.Generics
 
 data Env = Env {
-  counterMap :: IORef (Map CounterId Int),
+  _counterMap :: IORef (Map CounterId Int),
   _handlerContext :: HandlerContext 
-}
+} deriving Generic
+
+instance HasHandlerContext Env where
+  handlerContext f env@Env {_handlerContext} = 
+    (\_handlerContext -> env {_handlerContext}) <$> f _handlerContext
+
+class HasCounterMap env where
+  counterMap :: Lens' env (IORef (Map CounterId Int))
+
+instance HasCounterMap Env where
+  counterMap f env@Env {_counterMap} = 
+    (\_counterMap -> env {_counterMap}) <$> f _counterMap
 
 type M :: Type -> Type
 type M = ReaderT HandlerContext Handler
@@ -101,11 +116,12 @@ makeInitialServerState = newIORef Map.empty
 
 makeServerEnv :: IO Env
 makeServerEnv = do
-  counterMap <- newIORef Map.empty
+  _counterMap <- newIORef Map.empty
   pure Env {
-    counterMap,
+    _counterMap,
     _handlerContext = []
   }
+
 
 
 --

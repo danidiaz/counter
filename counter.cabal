@@ -41,6 +41,7 @@ library lib-counter
                       transformers,
                       unliftio-core,
                       dep-t,
+                      lens,
                       counter:lib-handler-context,
 
 library lib-handler-context
