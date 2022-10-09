@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -50,14 +51,20 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Except
 import Data.Map.Strict qualified as Map
 import Data.Tuple (swap)
+import Dep.Has
+import Dep.Env
 
-data Env = Env {
+data Env m = Env {
   counterMap :: IORef (Map CounterId Int),
+  withResource :: WithResource Counter m,
+  withExistingResource :: WithExistingResource Counter m,
   handlerContext :: HandlerContext 
 }
 
 type M :: Type -> Type
 type M = ReaderT HandlerContext Handler
+type M' :: Type -> Type
+type M' = ReaderT HandlerContext IO 
 
 -- https://discourse.haskell.org/t/haskell-mini-idiom-constraining-coerce/3814
 type family Resultify t where
@@ -71,12 +78,12 @@ makeServer :: IORef (Map CounterId Int) -> ServerT API M
 makeServer ref = do
   \user -> makeCountersServer ref user
 
-makeCounterServer :: WithExistingResource Counter -> CounterAPI (AsServerT M)
-makeCounterServer withExistingResource =
+makeCounterServer :: WithExistingResource Counter M' -> CounterAPI (AsServerT M)
+makeCounterServer WithExistingResource {runWithExistingResource} =
    CounterAPI
-        { increase = resultify $ withExistingResource (\c -> (pure (), Just (succ c))),
-          query = resultify $ withExistingResource (\c -> (pure c, Just c)),
-          delete = resultify $ withExistingResource (\_ -> (pure (), Nothing))
+        { increase = resultify $ runWithExistingResource (\c -> (pure (), Just (succ c))),
+          query = resultify $ runWithExistingResource (\c -> (pure c, Just c)),
+          delete = resultify $ runWithExistingResource  (\_ -> (pure (), Nothing))
         }
 
 makeCountersServer :: IORef (Map CounterId Int) -> User -> CountersAPI (AsServerT M)
@@ -86,13 +93,23 @@ makeCountersServer ref user =
           makeCounterServer (handleMissing (withResourceInMap ref counterId)),
         create = resultify do
           uuid <- liftIO nextRandom
-          withResourceInMap ref uuid \case
+          runWithResource (withResourceInMap ref uuid) \case
             Nothing -> (Right uuid, Just 0)
             Just _ -> (Left err500, Nothing) -- UUID collision!
       }
 
 makeInitialServerState :: IO (IORef (Map CounterId Int))
 makeInitialServerState = newIORef Map.empty
+
+-- makeServerEnv :: IO (Env M')
+-- makeServerEnv = do
+--   counterMap <- newIORef Map.empty
+--   pure Env {
+--     counterMap = ref,
+--     handlerContext = [],
+--     withResource = 
+--   }
+
 
 --
 -- AUTHENTICATION
@@ -115,19 +132,25 @@ basicAuthServerContext = authCheck :. EmptyContext
 -- The callback receives a resource if it exists, and returns a result or an
 -- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
 -- if the resource should be updated.
-type WithResource r = forall b m . MonadIO m => (Maybe r -> (b, Maybe r)) -> m b
+newtype WithResource r m = WithResource { 
+  runWithResource :: forall b . (Maybe r -> (b, Maybe r)) -> m b 
+}
 
 -- Like 'WithResource' but we assume the resource exists.
-type WithExistingResource r = forall b m . MonadIO m => (r -> (Either ServerError b, Maybe r)) -> m (Either ServerError b)
+newtype WithExistingResource r m = WithExistingResource { 
+  runWithExistingResource :: 
+    forall b . (r -> (Either ServerError b, Maybe r)) -> m (Either ServerError b)
+}
 
 -- | Takes care of checking if the resource exists, throwing 404 if it doesn't.
-handleMissing :: WithResource r -> WithExistingResource r
-handleMissing mightNotExist callback =
-  mightNotExist
+handleMissing :: MonadIO m => WithResource r m -> WithExistingResource r m
+handleMissing WithResource { runWithResource } = WithExistingResource \callback ->
+  runWithResource
     \mx -> case mx of
       Nothing -> (Left err404, Nothing)
       Just x -> callback x
 
-withResourceInMap :: Ord k => IORef (Map k r) -> k -> WithResource r
-withResourceInMap ref k callback =
-    liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
+withResourceInMap :: (MonadIO m , Ord k) => IORef (Map k r) -> k -> WithResource r m
+withResourceInMap ref k = WithResource \callback -> 
+    liftIO do atomicModifyIORef' ref (swap . Map.alterF  callback k)
+
