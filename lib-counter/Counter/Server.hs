@@ -7,6 +7,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Counter.Server where
 
@@ -30,29 +35,52 @@ import Control.Monad.Trans.Reader
 import Data.Kind
 import Data.Coerce
 import Control.Monad.Trans.Except
+import Control.Monad.IO.Unlift
+import Control.Monad.Trans.Reader
+import Control.Monad.Trans.Identity
 
 type M :: Type -> Type
 type M = ReaderT HandlerContext Handler
 
-makeCounterServer :: WithExistingResource Counter -> CounterAPI (AsServerT Handler)
-makeCounterServer withExistingResource =
-  CounterAPI
-    { increase = coerce $ withExistingResource (\c -> (pure (), Just (succ c))),
-      query = coerce $ withExistingResource (\c -> (pure c, Just c)),
-      delete = coerce $ withExistingResource (\_ -> (pure (), Nothing))
-    }
 
-makeCountersServer :: IORef (Map CounterId Int) -> User -> CountersAPI (AsServerT Handler)
+class Tip m a n b e before after | before -> m a e, after -> n b e where
+  mapTip :: (m a -> n b) -> before -> after 
+
+-- ReaderT is not particularly special, just a convenient known
+-- type constructor to recognize at the tip.
+instance Tip m a n b e (ReaderT e m a) (ReaderT e n b) where
+  mapTip f (ReaderT r) = ReaderT (f . r) 
+
+instance Tip m a n b () (IdentityT m a) (IdentityT n b) where
+  mapTip f (IdentityT r) = IdentityT (f r)
+
+
+instance Tip m a n b e before after =>
+  Tip m a n b e (x -> before) (x -> after) where
+  mapTip f r = mapTip f . r 
+
+makeCounterServer :: WithExistingResource Counter -> CounterAPI (AsServerT M)
+makeCounterServer withExistingResource =
+  let tipM f = mapTip (Handler . ExceptT) f
+   in CounterAPI
+        { increase = tipM $ withExistingResource (\c -> (pure (), Just (succ c))),
+          query = tipM $ withExistingResource (\c -> (pure c, Just c)),
+          delete = tipM $ withExistingResource (\_ -> (pure (), Nothing))
+        }
+
+makeCountersServer :: IORef (Map CounterId Int) -> User -> CountersAPI (AsServerT M)
 makeCountersServer ref user =
-  CountersAPI
-    { counters = \counterId -> do
-        makeCounterServer (handleMissing (withResourceInMap ref counterId)),
-      create = coerce do
-        uuid <- liftIO nextRandom
-        withResourceInMap ref uuid \case
-          Nothing -> (Right uuid, Just 0)
-          Just _ -> (Left err500, Nothing) -- UUID collision!
-    }
+  let tipM f = mapTip (Handler . ExceptT) f
+   in
+    CountersAPI
+      { counters = \counterId -> do
+          makeCounterServer (handleMissing (withResourceInMap ref counterId)),
+        create = tipM do
+          uuid <- liftIO nextRandom
+          withResourceInMap ref uuid \case
+            Nothing -> (Right uuid, Just 0)
+            Just _ -> (Left err500, Nothing) -- UUID collision!
+      }
 
 makeInitialServerState :: IO (IORef (Map CounterId Int))
 makeInitialServerState = newIORef Map.empty

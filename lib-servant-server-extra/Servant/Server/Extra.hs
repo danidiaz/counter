@@ -15,6 +15,7 @@ import Servant
     ServerError,
     err404
   )
+import Control.Monad.Trans.Reader
 
 --
 -- SOME API-GENERIC HELPERS
@@ -23,10 +24,10 @@ import Servant
 -- The callback receives a resource if it exists, and returns a result or an
 -- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
 -- if the resource should be updated.
-type WithResource r = forall b. (Maybe r -> (Either ServerError b, Maybe r)) -> IO (Either ServerError b)
+type WithResource r = forall b env. (Maybe r -> (Either ServerError b, Maybe r)) -> ReaderT env IO (Either ServerError b)
 
 -- Like 'WithResource' but we assume the resource exists.
-type WithExistingResource r = forall b. (r -> (Either ServerError b, Maybe r)) -> IO (Either ServerError b)
+type WithExistingResource r = forall b env. (r -> (Either ServerError b, Maybe r)) -> ReaderT env IO (Either ServerError b)
 
 -- | Takes care of checking if the resource exists, throwing 404 if it doesn't.
 handleMissing :: WithResource r -> WithExistingResource r

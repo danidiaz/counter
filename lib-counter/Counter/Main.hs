@@ -7,15 +7,18 @@
 
 module Counter.Main where
 
+import Control.Monad.Trans.Reader
 import Counter.API
-import Network.Wai.Handler.Warp (run)
-import Servant.Server ( serveWithContext, Application)
 import Counter.Server
 import Data.Proxy
+import Network.Wai.Handler.Warp (run)
+import Servant.Server (Application, BasicAuthCheck, hoistServerWithContext, serveWithContext)
 
 main :: IO ()
 main = do
   ref <- makeInitialServerState
-  let app :: Application
-      app = serveWithContext (Proxy @API) basicAuthServerContext (makeCountersServer ref)
+  -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
+  let server = hoistServerWithContext (Proxy @API) (Proxy @'[BasicAuthCheck User]) (`runReaderT` []) (makeCountersServer ref)
+      app :: Application
+      app = serveWithContext (Proxy @API) basicAuthServerContext server
   run 8000 app
