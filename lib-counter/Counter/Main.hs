@@ -16,9 +16,9 @@ import Servant.Server (Application, BasicAuthCheck, hoistServerWithContext, serv
 
 main :: IO ()
 main = do
-  ref <- makeInitialServerState
+  env <- makeServerEnv
   -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
-  let server = hoistServerWithContext (Proxy @API) (Proxy @'[BasicAuthCheck User]) (`runReaderT` []) (makeServer ref)
+  let server' = hoistServerWithContext (Proxy @API) (Proxy @'[BasicAuthCheck User]) (`runReaderT` env) server
       app :: Application
-      app = serveWithContext (Proxy @API) basicAuthServerContext server
+      app = serveWithContext (Proxy @API) basicAuthServerContext server'
   run 8000 app

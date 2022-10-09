@@ -1,83 +1,85 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ImportQualifiedPost #-}
-
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Counter.Server where
 
-import Control.Monad.IO.Class
-import Counter.API
-import Data.IORef
-import Data.Map.Strict as Map (Map, empty)
-import Data.UUID
-import Data.UUID.V4
-import Servant.API.BasicAuth ( BasicAuthData(BasicAuthData) )
-import Servant.Server
-    ( err500,
-      BasicAuthCheck(BasicAuthCheck),
-      BasicAuthResult(Unauthorized, Authorized),
-      Context(..),
-      Handler(..) ,
-      Server)
-  
-import Servant.Server
-import Servant.Server.Generic (AsServerT)
-import HandlerContext
-import Control.Monad.Trans.Reader
-import Data.Kind
-import Data.Coerce
-import Control.Monad.Trans.Except
-import Control.Monad.IO.Unlift
-import Control.Monad.Trans.Reader
-import Control.Monad.Trans.Identity
+import Control.Lens (Lens', view, Getter)
 import Control.Monad.Except
+import Control.Monad.IO.Class
+import Control.Monad.IO.Unlift
+import Control.Monad.Reader
 import Control.Monad.Trans.Except
-import Control.Monad.Trans.Except
+import Control.Monad.Trans.Identity
+import Control.Monad.Trans.Reader
+import Counter.API
+import Data.Coerce
+import Data.IORef
+import Data.Kind
+import Data.Map.Strict as Map (Map, empty)
 import Data.Map.Strict qualified as Map
 import Data.Tuple (swap)
-import Dep.Has
+import Data.UUID
+import Data.UUID.V4
 import Dep.Env
-import Control.Lens (view, Lens')
+import Dep.Has
 import GHC.Generics
+import HandlerContext
+import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
+import Servant.Server
+import GHC.Records
+import Data.Functor
+import Data.Function
+import Servant.Server
+  ( BasicAuthCheck (BasicAuthCheck),
+    BasicAuthResult (Authorized, Unauthorized),
+    Context (..),
+    Handler (..),
+    Server,
+    err500,
+  )
+import Servant.Server.Generic (AsServerT)
 
-data Env = Env {
-  _counterMap :: IORef (Map CounterId Int),
-  _handlerContext :: HandlerContext 
-} deriving Generic
+data Env = Env
+  { _counterMap :: IORef (Map CounterId Int),
+    _handlerContext :: HandlerContext
+  }
+  deriving (Generic)
 
 instance HasHandlerContext Env where
-  handlerContext f env@Env {_handlerContext} = 
-    (\_handlerContext -> env {_handlerContext}) <$> f _handlerContext
+  handlerContext f s =
+    getField  @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
 class HasCounterMap env where
-  counterMap :: Lens' env (IORef (Map CounterId Int))
+  counterMap :: Getter env (IORef (Map CounterId Int))
 
 instance HasCounterMap Env where
-  counterMap f env@Env {_counterMap} = 
-    (\_counterMap -> env {_counterMap}) <$> f _counterMap
+  counterMap f s =
+    getField  @"_counterMap" s & f <&> \a -> s {_counterMap = a}
 
 type M :: Type -> Type
-type M = ReaderT HandlerContext Handler
+type M = ReaderT Env Handler
+
 type M' :: Type -> Type
-type M' = ReaderT HandlerContext IO 
+type M' = ReaderT Env IO
 
 -- https://discourse.haskell.org/t/haskell-mini-idiom-constraining-coerce/3814
 type family Resultify t where
@@ -87,42 +89,31 @@ type family Resultify t where
 resultify :: Coercible (Resultify handler) handler => Resultify handler -> handler
 resultify = coerce
 
-makeServer :: IORef (Map CounterId Int) -> ServerT API M
-makeServer ref = do
-  \user -> makeCountersServer ref user
-
-makeCounterServer :: WithExistingResource Counter M' -> CounterAPI (AsServerT M)
-makeCounterServer WithExistingResource {runWithExistingResource} =
-   CounterAPI
-        { increase = resultify $ runWithExistingResource (\c -> (pure (), Just (succ c))),
-          query = resultify $ runWithExistingResource (\c -> (pure c, Just c)),
-          delete = resultify $ runWithExistingResource  (\_ -> (pure (), Nothing))
-        }
-
-makeCountersServer :: IORef (Map CounterId Int) -> User -> CountersAPI (AsServerT M)
-makeCountersServer ref user =
-    CountersAPI
-      { counters = \counterId -> do
-          makeCounterServer (handleMissing (withResourceInMap ref counterId)),
-        create = resultify do
-          uuid <- liftIO nextRandom
-          runWithResource (withResourceInMap ref uuid) \case
-            Nothing -> (Right uuid, Just 0)
-            Just _ -> (Left err500, Nothing) -- UUID collision!
-      }
-
-makeInitialServerState :: IO (IORef (Map CounterId Int))
-makeInitialServerState = newIORef Map.empty
+server :: ServerT API M
+server user = CountersAPI
+    { counters = \counterId -> do
+        let WithExistingResource {runWithExistingResource} =
+              handleMissing (withResourceInMap counterId)
+         in CounterAPI
+              { increase = resultify $ runWithExistingResource (\c -> (pure (), Just (succ c))),
+                query = resultify $ runWithExistingResource (\c -> (pure c, Just c)),
+                delete = resultify $ runWithExistingResource (\_ -> (pure (), Nothing))
+              },
+      create = resultify do
+        uuid <- liftIO nextRandom
+        runWithResource (withResourceInMap uuid) \case
+          Nothing -> (Right uuid, Just 0)
+          Just _ -> (Left err500, Nothing) -- UUID collision!
+    }
 
 makeServerEnv :: IO Env
 makeServerEnv = do
   _counterMap <- newIORef Map.empty
-  pure Env {
-    _counterMap,
-    _handlerContext = []
-  }
-
-
+  pure
+    Env
+      { _counterMap,
+        _handlerContext = []
+      }
 
 --
 -- AUTHENTICATION
@@ -145,25 +136,27 @@ basicAuthServerContext = authCheck :. EmptyContext
 -- The callback receives a resource if it exists, and returns a result or an
 -- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
 -- if the resource should be updated.
-newtype WithResource r m = WithResource { 
-  runWithResource :: forall b . (Maybe r -> (b, Maybe r)) -> m b 
-}
+newtype WithResource r m = WithResource
+  { runWithResource :: forall b. (Maybe r -> (b, Maybe r)) -> m b
+  }
 
 -- Like 'WithResource' but we assume the resource exists.
-newtype WithExistingResource r m = WithExistingResource { 
-  runWithExistingResource :: 
-    forall b . (r -> (Either ServerError b, Maybe r)) -> m (Either ServerError b)
-}
+newtype WithExistingResource r m = WithExistingResource
+  { runWithExistingResource ::
+      forall b.
+      (r -> (Either ServerError b, Maybe r)) ->
+      m (Either ServerError b)
+  }
 
 -- | Takes care of checking if the resource exists, throwing 404 if it doesn't.
 handleMissing :: MonadIO m => WithResource r m -> WithExistingResource r m
-handleMissing WithResource { runWithResource } = WithExistingResource \callback ->
+handleMissing WithResource {runWithResource} = WithExistingResource \callback ->
   runWithResource
     \mx -> case mx of
       Nothing -> (Left err404, Nothing)
       Just x -> callback x
 
-withResourceInMap :: (MonadIO m , Ord k) => IORef (Map k r) -> k -> WithResource r m
-withResourceInMap ref k = WithResource \callback -> 
-    liftIO do atomicModifyIORef' ref (swap . Map.alterF  callback k)
-
+withResourceInMap :: (HasCounterMap env, MonadReader env m, MonadIO m) => CounterId -> WithResource Counter m
+withResourceInMap k = WithResource \callback -> do
+  ref <- view counterMap
+  liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
