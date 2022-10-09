@@ -90,7 +90,7 @@ resultify :: Coercible (Resultify handler) handler => Resultify handler -> handl
 resultify = coerce
 
 server :: ServerT API M
-server user = CountersAPI
+server = addHandlerContext [] \user -> CountersAPI
     { counters = \counterId -> do
         let WithExistingResource {runWithExistingResource} =
               handleMissing (withResourceInMap counterId)
