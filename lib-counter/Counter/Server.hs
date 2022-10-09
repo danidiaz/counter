@@ -156,7 +156,13 @@ handleMissing WithResource {runWithResource} = WithExistingResource \callback ->
       Nothing -> (Left err404, Nothing)
       Just x -> callback x
 
-withResourceInMap :: (HasCounterMap env, MonadReader env m, MonadIO m) => CounterId -> WithResource Counter m
+withResourceInMap :: 
+  (HasCounterMap env, 
+   HasHandlerContext env,
+   MonadReader env m, 
+   MonadIO m) => CounterId -> WithResource Counter m
 withResourceInMap k = WithResource \callback -> do
+  do context <- view handlerContext
+     liftIO $ print $ "Called endpoint " ++ show context
   ref <- view counterMap
   liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
