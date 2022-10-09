@@ -50,4 +50,5 @@ library lib-handler-context
     hs-source-dirs:   lib-handler-context
     build-depends:    containers                         >= 0.6.4 && < 0.7,
                       mtl                                >= 2.2.2 && < 2.3,
-                      transformers
+                      transformers,
+                      lens,
