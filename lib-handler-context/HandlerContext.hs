@@ -68,30 +68,30 @@ instance AddHandlerContext' (DetermineCase server) server
     => AddHandlerContext' Function (x -> server) where
   addHandlerContext' context = fmap (addHandlerContext' @(DetermineCase server) context)
 
-instance (G.Generic record, AddHandlerContextNamed record (G.Rep record))
-    => AddHandlerContext' NamedRoutes record where
-  addHandlerContext' context record = G.to $ addHandlerContextName @_ @record context (G.from record)        
+instance (G.Generic (record_ x), AddHandlerContextNamed record_ (G.Rep (record_ x)))
+    => AddHandlerContext' NamedRoutes (record_ x) where
+  addHandlerContext' context record = G.to $ addHandlerContextName @_ @record_ context (G.from record)        
 
-type AddHandlerContextNamed :: Type -> (k -> Type) -> Constraint 
-class AddHandlerContextNamed (record :: Type) rep where 
+type AddHandlerContextNamed :: (Type -> Type) -> (k -> Type) -> Constraint 
+class AddHandlerContextNamed (record_ :: Type -> Type) rep where 
   addHandlerContextName :: HandlerContext -> rep x -> rep x
 
-instance AddHandlerContextNamed record fields 
-    => AddHandlerContextNamed record (G.D1 x (G.C1 y fields)) where
+instance AddHandlerContextNamed record_ fields 
+    => AddHandlerContextNamed record_ (G.D1 x (G.C1 y fields)) where
   addHandlerContextName context (G.M1 (G.M1 rep)) 
-    = G.M1 . G.M1 $ addHandlerContextName @_ @record @fields context rep
+    = G.M1 . G.M1 $ addHandlerContextName @_ @record_ @fields context rep
 
-instance (AddHandlerContextNamed record left ,
-        AddHandlerContextNamed record right) 
-    => AddHandlerContextNamed record (left G.:*: right) where
+instance (AddHandlerContextNamed record_ left ,
+        AddHandlerContextNamed record_ right) 
+    => AddHandlerContextNamed record_ (left G.:*: right) where
   addHandlerContextName context (left G.:*: right) 
-    = addHandlerContextName @_ @record @left context left
+    = addHandlerContextName @_ @record_ @left context left
       G.:*:
-      addHandlerContextName @_ @record @right context right
+      addHandlerContextName @_ @record_ @right context right
 
-instance (Typeable record, AddHandlerContext v, KnownSymbol fieldName) =>
-    AddHandlerContextNamed record (G.S1 ('G.MetaSel ('Just fieldName) unpackedness strictness laziness) (G.Rec0 v)) where
+instance (Typeable record_, AddHandlerContext v, KnownSymbol fieldName) =>
+    AddHandlerContextNamed record_ (G.S1 ('G.MetaSel ('Just fieldName) unpackedness strictness laziness) (G.Rec0 v)) where
     addHandlerContextName context (G.M1 (G.K1 v)) = 
         let fieldName = symbolVal (Proxy @fieldName)
-            context' = (typeRep (Proxy @record), fieldName) : context
+            context' = (typeRep (Proxy @record_), fieldName) : context
          in G.M1 (G.K1 (addHandlerContext context' v))

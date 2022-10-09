@@ -163,6 +163,6 @@ withResourceInMap ::
    MonadIO m) => CounterId -> WithResource Counter m
 withResourceInMap k = WithResource \callback -> do
   do context <- view handlerContext
-     liftIO $ print $ "Called endpoint " ++ show context
+     liftIO $ putStrLn $ "Called endpoint " ++ show context
   ref <- view counterMap
   liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
