@@ -54,11 +54,9 @@ import Data.Tuple (swap)
 import Dep.Has
 import Dep.Env
 
-data Env m = Env {
+data Env = Env {
   counterMap :: IORef (Map CounterId Int),
-  withResource :: WithResource Counter m,
-  withExistingResource :: WithExistingResource Counter m,
-  handlerContext :: HandlerContext 
+  _handlerContext :: HandlerContext 
 }
 
 type M :: Type -> Type
@@ -101,14 +99,13 @@ makeCountersServer ref user =
 makeInitialServerState :: IO (IORef (Map CounterId Int))
 makeInitialServerState = newIORef Map.empty
 
--- makeServerEnv :: IO (Env M')
--- makeServerEnv = do
---   counterMap <- newIORef Map.empty
---   pure Env {
---     counterMap = ref,
---     handlerContext = [],
---     withResource = 
---   }
+makeServerEnv :: IO Env
+makeServerEnv = do
+  counterMap <- newIORef Map.empty
+  pure Env {
+    counterMap,
+    _handlerContext = []
+  }
 
 
 --
