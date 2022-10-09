@@ -18,7 +18,7 @@ main :: IO ()
 main = do
   ref <- makeInitialServerState
   -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
-  let server = hoistServerWithContext (Proxy @API) (Proxy @'[BasicAuthCheck User]) (`runReaderT` []) (makeCountersServer ref)
+  let server = hoistServerWithContext (Proxy @API) (Proxy @'[BasicAuthCheck User]) (`runReaderT` []) (makeServer ref)
       app :: Application
       app = serveWithContext (Proxy @API) basicAuthServerContext server
   run 8000 app

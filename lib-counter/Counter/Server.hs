@@ -26,8 +26,10 @@ import Servant.Server
       BasicAuthCheck(BasicAuthCheck),
       BasicAuthResult(Unauthorized, Authorized),
       Context(..),
-      Handler(..) )
+      Handler(..) ,
+      Server)
   
+import Servant.Server
 import Servant.Server.Extra
 import Servant.Server.Generic (AsServerT)
 import HandlerContext
@@ -54,6 +56,9 @@ instance Tip m a n b e (ReaderT e m a) (ReaderT e n b) where
 instance Tip m a n b () (IdentityT m a) (IdentityT n b) where
   mapTip f (IdentityT r) = IdentityT (f r)
 
+makeServer :: IORef (Map CounterId Int) -> ServerT API M
+makeServer ref = do
+  \user -> makeCountersServer ref user
 
 instance Tip m a n b e before after =>
   Tip m a n b e (x -> before) (x -> after) where
