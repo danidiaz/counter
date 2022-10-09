@@ -24,7 +24,7 @@ import Control.Monad.Trans.Reader
 -- The callback receives a resource if it exists, and returns a result or an
 -- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
 -- if the resource should be updated.
-type WithResource r = forall b env. (Maybe r -> (Either ServerError b, Maybe r)) -> ReaderT env IO (Either ServerError b)
+type WithResource r = forall b env. (Maybe r -> (b, Maybe r)) -> ReaderT env IO b
 
 -- Like 'WithResource' but we assume the resource exists.
 type WithExistingResource r = forall b env. (r -> (Either ServerError b, Maybe r)) -> ReaderT env IO (Either ServerError b)
