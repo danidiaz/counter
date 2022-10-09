@@ -21,13 +21,15 @@ import Servant.Server
       BasicAuthCheck(BasicAuthCheck),
       BasicAuthResult(Unauthorized, Authorized),
       Context(..),
-      Handler )
+      Handler(..) )
   
 import Servant.Server.Extra
 import Servant.Server.Generic (AsServerT)
 import HandlerContext
 import Control.Monad.Trans.Reader
 import Data.Kind
+import Data.Coerce
+import Control.Monad.Trans.Except
 
 type M :: Type -> Type
 type M = ReaderT HandlerContext Handler
@@ -35,9 +37,9 @@ type M = ReaderT HandlerContext Handler
 makeCounterServer :: WithExistingResource Counter -> CounterAPI (AsServerT Handler)
 makeCounterServer withExistingResource =
   CounterAPI
-    { increase = withExistingResource (\c -> (pure (), Just (succ c))),
-      query = withExistingResource (\c -> (pure c, Just c)),
-      delete = withExistingResource (\_ -> (pure (), Nothing))
+    { increase = coerce $ withExistingResource (\c -> (pure (), Just (succ c))),
+      query = coerce $ withExistingResource (\c -> (pure c, Just c)),
+      delete = coerce $ withExistingResource (\_ -> (pure (), Nothing))
     }
 
 makeCountersServer :: IORef (Map CounterId Int) -> User -> CountersAPI (AsServerT Handler)
@@ -45,7 +47,7 @@ makeCountersServer ref user =
   CountersAPI
     { counters = \counterId -> do
         makeCounterServer (handleMissing (withResourceInMap ref counterId)),
-      create = do
+      create = coerce do
         uuid <- liftIO nextRandom
         withResourceInMap ref uuid \case
           Nothing -> (Right uuid, Just 0)

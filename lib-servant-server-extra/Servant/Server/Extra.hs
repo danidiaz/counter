@@ -11,7 +11,7 @@ import Data.IORef
 import Data.Map.Strict as Map (Map, alterF)
 import Data.Tuple (swap)
 import Servant
-  ( Handler,
+  (
     ServerError,
     err404
   )
@@ -23,10 +23,10 @@ import Servant
 -- The callback receives a resource if it exists, and returns a result or an
 -- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
 -- if the resource should be updated.
-type WithResource r = forall b. (Maybe r -> (Either ServerError b, Maybe r)) -> Handler b
+type WithResource r = forall b. (Maybe r -> (Either ServerError b, Maybe r)) -> IO (Either ServerError b)
 
 -- Like 'WithResource' but we assume the resource exists.
-type WithExistingResource r = forall b. (r -> (Either ServerError b, Maybe r)) -> Handler b
+type WithExistingResource r = forall b. (r -> (Either ServerError b, Maybe r)) -> IO (Either ServerError b)
 
 -- | Takes care of checking if the resource exists, throwing 404 if it doesn't.
 handleMissing :: WithResource r -> WithExistingResource r
@@ -38,6 +38,4 @@ handleMissing mightNotExist callback =
 
 withResourceInMap :: Ord k => IORef (Map k r) -> k -> WithResource r
 withResourceInMap ref k callback =
-  do
-    r <- liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
-    liftEither r
+    liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
