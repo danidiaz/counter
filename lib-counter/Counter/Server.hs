@@ -12,6 +12,11 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+
 
 module Counter.Server where
 
@@ -19,6 +24,7 @@ import Control.Monad.IO.Class
 import Counter.API
 import Data.IORef
 import Data.Map.Strict as Map (Map, empty)
+import Data.UUID
 import Data.UUID.V4
 import Servant.API.BasicAuth ( BasicAuthData(BasicAuthData) )
 import Servant.Server
@@ -30,7 +36,6 @@ import Servant.Server
       Server)
   
 import Servant.Server
-import Servant.Server.Extra
 import Servant.Server.Generic (AsServerT)
 import HandlerContext
 import Control.Monad.Trans.Reader
@@ -40,47 +45,46 @@ import Control.Monad.Trans.Except
 import Control.Monad.IO.Unlift
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Identity
+import Control.Monad.Except
+import Control.Monad.Trans.Except
+import Control.Monad.Trans.Except
+import Data.Map.Strict qualified as Map
+import Data.Tuple (swap)
+
+data Env = Env {
+  counterMap :: IORef (Map CounterId Int),
+  handlerContext :: HandlerContext 
+}
 
 type M :: Type -> Type
 type M = ReaderT HandlerContext Handler
 
+-- https://discourse.haskell.org/t/haskell-mini-idiom-constraining-coerce/3814
+type family Resultify t where
+  Resultify (a -> b) = a -> Resultify b
+  Resultify (ReaderT env Handler a) = ReaderT env IO (Either ServerError a)
 
-class Tip m a n b e before after | before -> m a e, after -> n b e where
-  mapTip :: (m a -> n b) -> before -> after 
-
--- ReaderT is not particularly special, just a convenient known
--- type constructor to recognize at the tip.
-instance Tip m a n b e (ReaderT e m a) (ReaderT e n b) where
-  mapTip f (ReaderT r) = ReaderT (f . r) 
-
-instance Tip m a n b () (IdentityT m a) (IdentityT n b) where
-  mapTip f (IdentityT r) = IdentityT (f r)
+resultify :: Coercible (Resultify handler) handler => Resultify handler -> handler
+resultify = coerce
 
 makeServer :: IORef (Map CounterId Int) -> ServerT API M
 makeServer ref = do
   \user -> makeCountersServer ref user
 
-instance Tip m a n b e before after =>
-  Tip m a n b e (x -> before) (x -> after) where
-  mapTip f r = mapTip f . r 
-
 makeCounterServer :: WithExistingResource Counter -> CounterAPI (AsServerT M)
 makeCounterServer withExistingResource =
-  let tipM f = mapTip (Handler . ExceptT) f
-   in CounterAPI
-        { increase = tipM $ withExistingResource (\c -> (pure (), Just (succ c))),
-          query = tipM $ withExistingResource (\c -> (pure c, Just c)),
-          delete = tipM $ withExistingResource (\_ -> (pure (), Nothing))
+   CounterAPI
+        { increase = resultify $ withExistingResource (\c -> (pure (), Just (succ c))),
+          query = resultify $ withExistingResource (\c -> (pure c, Just c)),
+          delete = resultify $ withExistingResource (\_ -> (pure (), Nothing))
         }
 
 makeCountersServer :: IORef (Map CounterId Int) -> User -> CountersAPI (AsServerT M)
 makeCountersServer ref user =
-  let tipM f = mapTip (Handler . ExceptT) f
-   in
     CountersAPI
       { counters = \counterId -> do
           makeCounterServer (handleMissing (withResourceInMap ref counterId)),
-        create = tipM do
+        create = resultify do
           uuid <- liftIO nextRandom
           withResourceInMap ref uuid \case
             Nothing -> (Right uuid, Just 0)
@@ -103,3 +107,27 @@ authCheck =
 
 basicAuthServerContext :: Context (BasicAuthCheck User ': '[])
 basicAuthServerContext = authCheck :. EmptyContext
+
+--
+-- SOME API-GENERIC HELPERS
+-- Not really related to named routes.
+
+-- The callback receives a resource if it exists, and returns a result or an
+-- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
+-- if the resource should be updated.
+type WithResource r = forall b m . MonadIO m => (Maybe r -> (b, Maybe r)) -> m b
+
+-- Like 'WithResource' but we assume the resource exists.
+type WithExistingResource r = forall b m . MonadIO m => (r -> (Either ServerError b, Maybe r)) -> m (Either ServerError b)
+
+-- | Takes care of checking if the resource exists, throwing 404 if it doesn't.
+handleMissing :: WithResource r -> WithExistingResource r
+handleMissing mightNotExist callback =
+  mightNotExist
+    \mx -> case mx of
+      Nothing -> (Left err404, Nothing)
+      Just x -> callback x
+
+withResourceInMap :: Ord k => IORef (Map k r) -> k -> WithResource r
+withResourceInMap ref k callback =
+    liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
