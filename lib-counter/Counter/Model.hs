@@ -42,10 +42,11 @@ import Data.Functor
 import Data.Aeson (FromJSON, ToJSON)
 import GHC.Generics (Generic)
 import Data.Result
+import Servant (FromHttpApiData)
 
 newtype CounterId = CounterId UUID 
   deriving stock (Ord, Eq)
-  deriving newtype (FromJSON, ToJSON)
+  deriving newtype (FromJSON, ToJSON, FromHttpApiData)
 
 data Counter = Counter {
     counterId :: CounterId,
