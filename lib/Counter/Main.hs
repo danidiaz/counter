@@ -87,11 +87,11 @@ makeServer :: CompositionRoot Identity M' -> ServerT API M
 makeServer (asCall -> call) = \user -> CountersAPI
     { counters = \counterId -> do
          CounterAPI
-              { increase = handlerize (call Model.increaseCounter counterId), 
-                query = handlerize (call Model.getCounter counterId),
-                delete = handlerize (call Model.deleteCounter counterId)
+              { increase = toHandler (call Model.increaseCounter counterId), 
+                query = toHandler (call Model.getCounter counterId),
+                delete = toHandler (call Model.deleteCounter counterId)
               },
-      create = handlerize (call Model.createCounter)
+      create = toHandler (call Model.createCounter)
     }
 
 

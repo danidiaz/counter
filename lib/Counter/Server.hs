@@ -78,17 +78,17 @@ type M' :: Type -> Type
 type M' = ReaderT Env IO
 
 
-class Handlerizable before after | before -> after where
-  handlerize :: before -> after
+class ToHandler before after | before -> after where
+  toHandler :: before -> after
 
-instance Handlerizable b b' => Handlerizable (a -> b) (a -> b') where 
-  handlerize = fmap handlerize 
+instance ToHandler b b' => ToHandler (a -> b) (a -> b') where 
+  toHandler = fmap toHandler 
 
-instance ToServerError a a' => Handlerizable (ReaderT env IO a) (ReaderT env Handler a') where
-  handlerize = coerce . fmap toServerError 
+instance ToHandlerResult a a' => ToHandler (ReaderT env IO a) (ReaderT env Handler a') where
+  toHandler = coerce . fmap toHandlerResult 
 
-class ToServerError before after | before -> after where
-  toServerError :: before -> Either ServerError after
+class ToHandlerResult before after | before -> after where
+  toHandlerResult :: before -> Either ServerError after
 
 data IsResult = IsResult | IsNotResult
 
@@ -96,23 +96,28 @@ type family DetectResult result :: IsResult where
   DetectResult (Result e a) = 'IsResult
   DetectResult _ = 'IsNotResult
 
-instance (ToServerError' (DetectResult before) before after) => ToServerError before after where
-  toServerError = toServerError' @(DetectResult before)
+instance (ToHandlerResult' (DetectResult before) before after) => ToHandlerResult before after where
+  toHandlerResult = toHandlerResult' @(DetectResult before)
 
-class ToServerError' (is :: IsResult) before after | before is -> after where
-  toServerError' :: before -> Either ServerError after
+class ToHandlerResult' (is :: IsResult) before after | before is -> after where
+  toHandlerResult' :: before -> Either ServerError after
 
-instance ToServerError' 'IsNotResult a a where
-  toServerError' = Right
-instance ToServerError a a' => ToServerError' 'IsResult (Result Missing a) a' where
-  toServerError' = \case 
-    Problem _ -> Left err404
-    Ok r -> toServerError r
-instance ToServerError a a' => ToServerError' 'IsResult (Result Collision a) a' where
-  toServerError' = \case 
-    Problem _ -> Left err500
-    Ok r -> toServerError r
+instance ToHandlerResult' 'IsNotResult a a where
+  toHandlerResult' = Right
 
+instance (ToServerError err, ToHandlerResult a a') => ToHandlerResult' 'IsResult (Result err a) a' where
+  toHandlerResult' = \case 
+    Problem err -> Left (toServerError err)
+    Ok r -> toHandlerResult r
+
+class ToServerError x where
+  toServerError :: x -> ServerError
+
+instance ToServerError Missing where
+  toServerError _ = err404
+
+instance ToServerError Collision where
+  toServerError _ = err500
 
 makeServerEnv :: IO Env
 makeServerEnv = do
