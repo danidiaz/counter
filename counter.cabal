@@ -43,7 +43,7 @@ library lib-counter
                       unliftio-core,
                       dep-t,
                       lens,
-                      time,
+                      aeson,
                       counter:lib-handler-context,
 
 library lib-handler-context

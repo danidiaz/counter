@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -22,7 +23,7 @@
 
 module Counter.Server where
 
-import Control.Lens (Lens', view, Getter)
+import Control.Lens (Lens', view, Getter, iat)
 import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.IO.Unlift
@@ -48,6 +49,7 @@ import Servant.Server
 import GHC.Records
 import Data.Functor
 import Data.Function
+import Data.Result
 import Servant.Server
   ( BasicAuthCheck (BasicAuthCheck),
     BasicAuthResult (Authorized, Unauthorized),
@@ -57,9 +59,10 @@ import Servant.Server
     err500,
   )
 import Servant.Server.Generic (AsServerT)
+import Counter.Model
 
-data Env = Env
-  { _counterMap :: IORef (Map CounterId Int),
+newtype Env = Env
+  { 
     _handlerContext :: HandlerContext
   }
   deriving (Generic)
@@ -68,50 +71,55 @@ instance HasHandlerContext Env where
   handlerContext f s =
     getField  @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
-class HasCounterMap env where
-  counterMap :: Getter env (IORef (Map CounterId Int))
-
-instance HasCounterMap Env where
-  counterMap f s =
-    getField  @"_counterMap" s & f <&> \a -> s {_counterMap = a}
-
 type M :: Type -> Type
 type M = ReaderT Env Handler
 
 type M' :: Type -> Type
 type M' = ReaderT Env IO
 
--- https://discourse.haskell.org/t/haskell-mini-idiom-constraining-coerce/3814
-type family Resultify t where
-  Resultify (a -> b) = a -> Resultify b
-  Resultify (ReaderT env Handler a) = ReaderT env IO (Either ServerError a)
 
-resultify :: Coercible (Resultify handler) handler => Resultify handler -> handler
-resultify = coerce
+class Handlerizable before after | before -> after where
+  handlerize :: before -> after
 
-server :: ServerT API M
-server = addHandlerContext [] \user -> CountersAPI
-    { counters = \counterId -> do
-        let WithExistingResource {runWithExistingResource} =
-              handleMissing (withResourceInMap counterId)
-         in CounterAPI
-              { increase = resultify $ runWithExistingResource (\c -> (pure (), Just (succ c))),
-                query = resultify $ runWithExistingResource (\c -> (pure c, Just c)),
-                delete = resultify $ runWithExistingResource (\_ -> (pure (), Nothing))
-              },
-      create = resultify do
-        uuid <- liftIO nextRandom
-        runWithResource (withResourceInMap uuid) \case
-          Nothing -> (Right uuid, Just 0)
-          Just _ -> (Left err500, Nothing) -- UUID collision!
-    }
+instance Handlerizable b b' => Handlerizable (a -> b) (a -> b') where 
+  handlerize = fmap handlerize 
+
+instance ToServerError a a' => Handlerizable (ReaderT env IO a) (ReaderT env Handler a') where
+  handlerize = coerce . fmap toServerError 
+
+class ToServerError before after | before -> after where
+  toServerError :: before -> Either ServerError after
+
+data IsResult = IsResult | IsNotResult
+
+type family DetectResult result :: IsResult where
+  DetectResult (Result e a) = 'IsResult
+  DetectResult _ = 'IsNotResult
+
+instance (ToServerError' (DetectResult before) before after) => ToServerError before after where
+  toServerError = toServerError' @(DetectResult before)
+
+class ToServerError' (is :: IsResult) before after | before is -> after where
+  toServerError' :: before -> Either ServerError after
+
+instance ToServerError' 'IsNotResult a a where
+  toServerError' = Right
+instance ToServerError a a' => ToServerError' 'IsResult (Result Missing a) a' where
+  toServerError' = \case 
+    Problem _ -> Left err404
+    Result r -> toServerError r
+instance ToServerError a a' => ToServerError' 'IsResult (Result Collision a) a' where
+  toServerError' = \case 
+    Problem _ -> Left err500
+    Result r -> toServerError r
+
 
 makeServerEnv :: IO Env
 makeServerEnv = do
   _counterMap <- newIORef Map.empty
   pure
     Env
-      { _counterMap,
+      { 
         _handlerContext = []
       }
 
@@ -128,41 +136,3 @@ authCheck =
 
 basicAuthServerContext :: Context (BasicAuthCheck User ': '[])
 basicAuthServerContext = authCheck :. EmptyContext
-
---
--- SOME API-GENERIC HELPERS
--- Not really related to named routes.
-
--- The callback receives a resource if it exists, and returns a result or an
--- error, along with a 'Nothing' if the resource should be deleted, or a 'Just'
--- if the resource should be updated.
-newtype WithResource r m = WithResource
-  { runWithResource :: forall b. (Maybe r -> (b, Maybe r)) -> m b
-  }
-
--- Like 'WithResource' but we assume the resource exists.
-newtype WithExistingResource r m = WithExistingResource
-  { runWithExistingResource ::
-      forall b.
-      (r -> (Either ServerError b, Maybe r)) ->
-      m (Either ServerError b)
-  }
-
--- | Takes care of checking if the resource exists, throwing 404 if it doesn't.
-handleMissing :: MonadIO m => WithResource r m -> WithExistingResource r m
-handleMissing WithResource {runWithResource} = WithExistingResource \callback ->
-  runWithResource
-    \mx -> case mx of
-      Nothing -> (Left err404, Nothing)
-      Just x -> callback x
-
-withResourceInMap :: 
-  (HasCounterMap env, 
-   HasHandlerContext env,
-   MonadReader env m, 
-   MonadIO m) => CounterId -> WithResource Counter m
-withResourceInMap k = WithResource \callback -> do
-  do context <- view handlerContext
-     liftIO $ putStrLn $ "Called endpoint " ++ show context
-  ref <- view counterMap
-  liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)

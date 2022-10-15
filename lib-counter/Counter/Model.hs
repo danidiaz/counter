@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DataKinds #-}
@@ -38,14 +39,20 @@ import Dep.Has
 import Data.UUID
 import Data.UUID.V4
 import Data.Functor
+import Data.Aeson (FromJSON, ToJSON)
+import GHC.Generics (Generic)
+import Data.Result
 
 newtype CounterId = CounterId UUID 
   deriving stock (Ord, Eq)
+  deriving newtype (FromJSON, ToJSON)
 
 data Counter = Counter {
     counterId :: CounterId,
     counterValue :: Int
-}
+} deriving stock Generic
+  deriving anyclass (FromJSON, ToJSON)
+
 
 newtype GetCounter m = 
   GetCounter { getCounter :: CounterId -> m (Result Missing Counter) }
@@ -88,7 +95,6 @@ data CounterRepository m = CounterRepository {
     withExistingCounter :: CounterId -> m (WithExistingResource Counter m) 
 }
 
-  -- ref <- 
 makeInMemoryCounterRepository :: MonadIO m => IORef (Map CounterId Counter) -> CounterRepository m
 makeInMemoryCounterRepository ref = do
   let withCounter k = pure $ 
@@ -115,10 +121,6 @@ newtype WithExistingResource r m = WithExistingResource
       (r -> (b, Maybe r)) ->
       m (Result Missing b)
   }
-
-data Result e a = 
-    Problem e
-  | Result a
 
 data Missing = Missing
 

@@ -12,6 +12,7 @@ import Data.Text
 import Data.UUID
 import Servant.API
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
+import Counter.Model
 
 type API = BasicAuth "foo-realm" User :> "counter" :> NamedRoutes CountersAPI
 
@@ -23,14 +24,10 @@ data CountersAPI mode = CountersAPI
 
 data CounterAPI mode = CounterAPI
   { increase :: mode :- "increase" :> Post '[JSON] (),
-    query :: mode :- Get '[JSON] Int,
+    query :: mode :- Get '[JSON] Counter,
     delete :: mode :- Delete '[JSON] ()
   }
   deriving stock (Generic)
-
-type CounterId = UUID
-
-type Counter = Int
 
 newtype User = User {userName :: Text}
   deriving (Eq, Show)
