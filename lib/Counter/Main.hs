@@ -51,6 +51,7 @@ import Data.Map.Strict as Map (Map, empty)
 import Data.IORef
 import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
 import Servant.Server
+import Servant.Server.Handler
 import Dep.Has
 import qualified Counter.API as Model
 
@@ -87,11 +88,11 @@ makeServer :: CompositionRoot Identity M' -> ServerT API M
 makeServer (asCall -> call) = \user -> CountersAPI
     { counters = \counterId -> do
          CounterAPI
-              { increase = toHandler (call Model.increaseCounter counterId), 
-                query = toHandler (call Model.getCounter counterId),
-                delete = toHandler (call Model.deleteCounter counterId)
+              { increase = toHandler @X (call Model.increaseCounter counterId), 
+                query = toHandler @X (call Model.getCounter counterId),
+                delete = toHandler @X (call Model.deleteCounter counterId)
               },
-      create = toHandler (call Model.createCounter)
+      create = toHandler @X (call Model.createCounter)
     }
 
 

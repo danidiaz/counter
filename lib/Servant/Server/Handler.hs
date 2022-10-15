@@ -20,8 +20,9 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE InstanceSigs #-}
 
-module Counter.Server where
+module Servant.Server.Handler where
 
 import Control.Lens (Lens', view, Getter, iat)
 import Control.Monad.Except
@@ -59,52 +60,42 @@ import Servant.Server
     err500,
   )
 import Servant.Server.Generic (AsServerT)
-import Servant.Server.Handler
 import Counter.Model
 
-newtype Env = Env
-  { 
-    _handlerContext :: HandlerContext
-  }
-  deriving (Generic)
 
-instance HasHandlerContext Env where
-  handlerContext f s =
-    getField  @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
+class ToHandler mark before after | mark before -> after where
+  toHandler :: before -> after
 
-type M :: Type -> Type
-type M = ReaderT Env Handler
+instance ToHandler mark b b' => ToHandler mark (a -> b) (a -> b') where 
+  toHandler = fmap (toHandler @mark)
 
-type M' :: Type -> Type
-type M' = ReaderT Env IO
+instance ToHandlerResult mark a a' => ToHandler mark (ReaderT env IO a) (ReaderT env Handler a') where
+  toHandler :: ToHandlerResult mark a a' => ReaderT env IO a -> ReaderT env Handler a'
+  toHandler = coerce . fmap (toHandlerResult @mark)
 
-data X = X
+class ToHandlerResult mark before after | mark before -> after where
+  toHandlerResult :: before -> Either ServerError after
 
-instance ToServerError X Missing where
-  toServerError _ = err404
+data IsResult = IsResult | IsNotResult
 
-instance ToServerError X Collision where
-  toServerError _ = err500
+type family DetectResult result :: IsResult where
+  DetectResult (Result e a) = 'IsResult
+  DetectResult _ = 'IsNotResult
 
-makeServerEnv :: IO Env
-makeServerEnv = do
-  _counterMap <- newIORef Map.empty
-  pure
-    Env
-      { 
-        _handlerContext = []
-      }
+class ToHandlerResult' mark (is :: IsResult) before after | mark is before -> after where
+  toHandlerResult' :: before -> Either ServerError after
 
---
--- AUTHENTICATION
--- https://docs.servant.dev/en/stable/tutorial/Authentication.html#
-authCheck :: BasicAuthCheck User
-authCheck =
-  let check (BasicAuthData username password) =
-        if username == "servant" && password == "server"
-          then return (Authorized (User "servant"))
-          else return Unauthorized
-   in BasicAuthCheck check
+instance (ToHandlerResult' mark (DetectResult before) before after) => ToHandlerResult mark before after where
+  toHandlerResult = toHandlerResult' @mark @(DetectResult before)
 
-basicAuthServerContext :: Context (BasicAuthCheck User ': '[])
-basicAuthServerContext = authCheck :. EmptyContext
+
+instance ToHandlerResult' mark 'IsNotResult a a where
+  toHandlerResult' = Right
+
+instance (ToServerError mark err, ToHandlerResult mark a a') => ToHandlerResult' mark 'IsResult (Result err a) a' where
+  toHandlerResult' = \case 
+    Error err -> Left (toServerError @mark err)
+    Ok r -> toHandlerResult @mark r
+
+class ToServerError mark x where
+  toServerError :: x -> ServerError
