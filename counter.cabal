@@ -29,6 +29,7 @@ library lib-counter
     exposed-modules:  Counter.API
                       Counter.Server
                       Counter.Main
+                      Counter.Model
     hs-source-dirs:   lib-counter 
     build-depends:    containers                         >= 0.6.4 && < 0.7,
                       mtl                                >= 2.2.2 && < 2.3,
@@ -42,6 +43,7 @@ library lib-counter
                       unliftio-core,
                       dep-t,
                       lens,
+                      time,
                       counter:lib-handler-context,
 
 library lib-handler-context
