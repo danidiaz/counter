@@ -38,35 +38,6 @@ import Dep.Has
 import Data.UUID
 import Data.UUID.V4
 import Data.Functor
-import GHC.Generics (Generic)
-import Control.Monad.Trans.Cont
-
-data Env h m = Env {
-  _getCounter :: h (GetCounter m), 
-  _increaseCounter :: h (IncreaseCounter m), 
-  _deleteCounter :: h (DeleteCounter m), 
-  _createCounter :: h (CreateCounter m),
-  _counterRepository :: h (CounterRepository m)
-} deriving stock (Generic) 
-  deriving anyclass (FieldsFindableByType, Phased)
-
-type Phases m = ContT () IO `Compose` Constructor (Env Identity m)
-
-env :: MonadIO m => Env (Phases m) m 
-env = Env {
-  _getCounter = fromBare $ skipAlloc makeGetCounter,
-  _increaseCounter = fromBare $ skipAlloc makeIncreaseCounter,
-  _deleteCounter = fromBare $ skipAlloc makeDeleteCounter,
-  _createCounter = fromBare $ skipAlloc makeCreateCounter,
-  _counterRepository = fromBare $ 
-    liftIO (newIORef Map.empty) 
-      <&> \ref _ -> makeInMemoryCounterRepository ref
-}
-  where 
-    skipAlloc :: a -> ContT () IO a
-    skipAlloc = pure
-
-deriving via Autowired (Env Identity m) instance Autowireable r_ m (Env Identity m) => Has r_ m (Env Identity m)
 
 newtype CounterId = CounterId UUID 
   deriving stock (Ord, Eq)
