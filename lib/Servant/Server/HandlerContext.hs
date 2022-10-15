@@ -15,7 +15,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 
-module HandlerContext where
+module Servant.Server.HandlerContext where
 
 import Control.Lens
 import GHC.TypeLits
@@ -46,9 +46,9 @@ data Cases
 
 type DetermineCase :: Type -> Cases
 type family DetermineCase server where
-  DetermineCase (ReaderT env m a) = AtTheTip
-  DetermineCase (a -> b) = Function
-  DetermineCase _ = NamedRoutes
+  DetermineCase (ReaderT env m a) = 'AtTheTip
+  DetermineCase (a -> b) = 'Function
+  DetermineCase _ = 'NamedRoutes
 
 class AddHandlerContext server where
   addHandlerContext :: HandlerContext -> server -> server
@@ -61,15 +61,15 @@ instance AddHandlerContext' (DetermineCase server) server
   addHandlerContext = addHandlerContext' @(DetermineCase server)
 
 instance (HasHandlerContext env, Monad m) 
-    => AddHandlerContext' AtTheTip (ReaderT env m a) where
+    => AddHandlerContext' 'AtTheTip (ReaderT env m a) where
   addHandlerContext' context = locally handlerContext (const context)
 
 instance AddHandlerContext' (DetermineCase server) server
-    => AddHandlerContext' Function (x -> server) where
+    => AddHandlerContext' 'Function (x -> server) where
   addHandlerContext' context = fmap (addHandlerContext' @(DetermineCase server) context)
 
 instance (G.Generic (record_ x), AddHandlerContextNamed record_ (G.Rep (record_ x)))
-    => AddHandlerContext' NamedRoutes (record_ x) where
+    => AddHandlerContext' 'NamedRoutes (record_ x) where
   addHandlerContext' context record = G.to $ addHandlerContextName @_ @record_ context (G.from record)        
 
 type AddHandlerContextNamed :: (Type -> Type) -> (k -> Type) -> Constraint 

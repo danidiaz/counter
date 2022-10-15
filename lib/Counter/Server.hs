@@ -32,6 +32,7 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Identity
 import Control.Monad.Trans.Reader
 import Counter.API
+import Counter.API qualified as API
 import Data.Coerce
 import Data.IORef
 import Data.Kind
@@ -60,6 +61,7 @@ import Servant.Server
   )
 import Servant.Server.Generic (AsServerT)
 import Servant.Server.ToHandler
+import Counter.Model qualified as Model
 import Counter.Model
 
 newtype Env = Env
@@ -80,11 +82,27 @@ type M' = ReaderT Env IO
 
 data X = X
 
-instance ToServerError X Missing where
+instance ToServerError X Model.Missing where
   toServerError _ = err404
 
-instance ToServerError X Collision where
+instance ToServerError X Model.Collision where
   toServerError _ = err500
+
+instance FromDTO X API.CounterId Model.CounterId where
+  fromDTO = coerce
+
+instance ToDTO X API.CounterId Model.CounterId where
+  toDTO = coerce
+
+instance ToDTO X API.Counter Model.Counter where
+  toDTO Model.Counter {Model.counterId, Model.counterValue} = 
+    API.Counter {
+      API.counterId = toDTO @X counterId,
+      API.counterValue = counterValue
+    }
+
+instance ToDTO X () () where
+  toDTO = id
 
 makeServerEnv :: IO Env
 makeServerEnv = do

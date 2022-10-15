@@ -86,7 +86,7 @@ deriving via Autowired (CompositionRoot Identity m) instance Autowireable r_ m (
 
 makeServer :: CompositionRoot Identity M' -> ServerT API M
 makeServer (asCall -> call) = \user -> CountersAPI
-    { counters = \counterId -> do
+    { counters = \(fromDTO @X -> counterId) -> do
          CounterAPI
               { increase = toHandler @X (call Model.increaseCounter counterId), 
                 query = toHandler @X (call Model.getCounter counterId),

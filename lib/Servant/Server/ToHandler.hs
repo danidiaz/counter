@@ -22,7 +22,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE InstanceSigs #-}
 
-module Servant.Server.Handler where
+module Servant.Server.ToHandler where
 
 import Control.Lens (Lens', view, Getter, iat)
 import Control.Monad.Except
@@ -44,7 +44,6 @@ import Data.UUID.V4
 import Dep.Env
 import Dep.Has
 import GHC.Generics
-import HandlerContext
 import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
 import Servant.Server
 import GHC.Records
@@ -63,17 +62,17 @@ import Servant.Server.Generic (AsServerT)
 import Counter.Model
 
 
-class ToHandler mark before after | mark before -> after where
+class ToHandler mark before after where
   toHandler :: before -> after
 
-instance ToHandler mark b b' => ToHandler mark (a -> b) (a -> b') where 
-  toHandler = fmap (toHandler @mark)
+instance (FromDTO mark a' a, ToHandler mark b b') => ToHandler mark (a -> b) (a' -> b') where 
+  toHandler f = toHandler @mark . (f . fromDTO @mark)
 
 instance ToHandlerResult mark a a' => ToHandler mark (ReaderT env IO a) (ReaderT env Handler a') where
   toHandler :: ToHandlerResult mark a a' => ReaderT env IO a -> ReaderT env Handler a'
-  toHandler = coerce . fmap (toHandlerResult @mark)
+  toHandler = coerce . fmap (toHandlerResult @mark @a @a')
 
-class ToHandlerResult mark before after | mark before -> after where
+class ToHandlerResult mark before after where
   toHandlerResult :: before -> Either ServerError after
 
 data IsResult = IsResult | IsNotResult
@@ -82,15 +81,14 @@ type family DetectResult result :: IsResult where
   DetectResult (Result e a) = 'IsResult
   DetectResult _ = 'IsNotResult
 
-class ToHandlerResult' mark (is :: IsResult) before after | mark is before -> after where
+class ToHandlerResult' mark (is :: IsResult) before after where
   toHandlerResult' :: before -> Either ServerError after
 
 instance (ToHandlerResult' mark (DetectResult before) before after) => ToHandlerResult mark before after where
   toHandlerResult = toHandlerResult' @mark @(DetectResult before)
 
-
-instance ToHandlerResult' mark 'IsNotResult a a where
-  toHandlerResult' = Right
+instance ToDTO mark a' a => ToHandlerResult' mark 'IsNotResult a a' where
+  toHandlerResult' = Right . toDTO @mark
 
 instance (ToServerError mark err, ToHandlerResult mark a a') => ToHandlerResult' mark 'IsResult (Result err a) a' where
   toHandlerResult' = \case 
@@ -99,3 +97,9 @@ instance (ToServerError mark err, ToHandlerResult mark a a') => ToHandlerResult'
 
 class ToServerError mark x where
   toServerError :: x -> ServerError
+
+class ToDTO mark dto model | mark dto -> model where
+    toDTO :: model -> dto
+
+class FromDTO mark dto model | mark dto -> model where
+    fromDTO :: dto -> model
