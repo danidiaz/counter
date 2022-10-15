@@ -1,5 +1,5 @@
 module Data.Result where
 
 data Result e a = 
-    Problem e
+    Error e
   | Ok a

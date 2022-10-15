@@ -107,7 +107,7 @@ instance ToHandlerResult' 'IsNotResult a a where
 
 instance (ToServerError err, ToHandlerResult a a') => ToHandlerResult' 'IsResult (Result err a) a' where
   toHandlerResult' = \case 
-    Problem err -> Left (toServerError err)
+    Error err -> Left (toServerError err)
     Ok r -> toHandlerResult r
 
 class ToServerError x where

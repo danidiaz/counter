@@ -87,7 +87,7 @@ makeCreateCounter (asCall -> call) = CreateCounter do
     counterId <- CounterId <$> liftIO nextRandom
     WithResource {runWithResource} <- call withCounter counterId 
     runWithResource \case
-      Nothing -> (Problem Collision, Just (Counter {counterId, counterValue = 0}))
+      Nothing -> (Error Collision, Just (Counter {counterId, counterValue = 0}))
       Just _ -> (Ok counterId, Nothing) -- UUID collision!
 
 -- TODO: generalize this.
@@ -133,7 +133,7 @@ handleMissing WithResource {runWithResource} = WithExistingResource \callback ->
   runWithResource
     \mx -> case mx of
       Nothing -> 
-        (Problem Missing, Nothing)
+        (Error Missing, Nothing)
       Just x -> 
         let (b, mr) = callback x
          in (Ok b, mr) 
