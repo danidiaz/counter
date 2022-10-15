@@ -30,8 +30,9 @@ library lib-counter
                       Counter.Server
                       Counter.Main
                       Counter.Model
-                      HandlerContext
                       Data.Result
+                      Servant.Server.ToHandler
+                      Servant.Server.HandlerContext
     hs-source-dirs:   lib
     build-depends:    containers                         >= 0.6.4 && < 0.7,
                       mtl                                >= 2.2.2 && < 2.3,

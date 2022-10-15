@@ -51,7 +51,7 @@ import Data.Map.Strict as Map (Map, empty)
 import Data.IORef
 import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
 import Servant.Server
-import Servant.Server.Handler
+import Servant.Server.ToHandler
 import Dep.Has
 import qualified Counter.API as Model
 

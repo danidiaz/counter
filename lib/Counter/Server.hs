@@ -43,7 +43,7 @@ import Data.UUID.V4
 import Dep.Env
 import Dep.Has
 import GHC.Generics
-import HandlerContext
+import Servant.Server.HandlerContext
 import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
 import Servant.Server
 import GHC.Records
@@ -59,7 +59,7 @@ import Servant.Server
     err500,
   )
 import Servant.Server.Generic (AsServerT)
-import Servant.Server.Handler
+import Servant.Server.ToHandler
 import Counter.Model
 
 newtype Env = Env
