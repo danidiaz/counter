@@ -34,6 +34,7 @@ import Data.Tuple (swap)
 import Control.Monad.IO.Class
 import Control.Monad.IO.Unlift
 import Data.IORef
+import Dep.Has
 import Dep.Env
 import Dep.Has
 import Data.UUID
@@ -42,11 +43,12 @@ import Data.Functor
 import Data.Aeson (FromJSON, ToJSON)
 import GHC.Generics (Generic)
 import Data.Result
-import Servant (FromHttpApiData)
+import Dep.Logger
+import Prelude hiding (log)
 
 newtype CounterId = CounterId UUID 
-  deriving stock (Ord, Eq)
-  deriving newtype (FromJSON, ToJSON, FromHttpApiData)
+  deriving stock (Show, Ord, Eq)
+  deriving newtype (FromJSON, ToJSON)
 
 data Counter = Counter {
     counterId :: CounterId,
@@ -74,8 +76,9 @@ makeIncreaseCounter (asCall -> call) = IncreaseCounter \counterId -> do
 newtype DeleteCounter m = 
   DeleteCounter { deleteCounter :: CounterId -> m (Result Missing ()) }
 
-makeDeleteCounter ::  (Monad m, Has CounterRepository m env) => env -> DeleteCounter m
+makeDeleteCounter ::  (Monad m, Has Logger m env, Has CounterRepository m env) => env -> DeleteCounter m
 makeDeleteCounter (asCall -> call) = DeleteCounter \counterId -> do
+    call log $ "Requesting counter deletion " ++ show counterId
     WithExistingResource {runWithExistingResource} <- call withExistingCounter counterId 
     runWithExistingResource (\_ -> ((), Nothing))
 
@@ -88,7 +91,7 @@ makeCreateCounter (asCall -> call) = CreateCounter do
     WithResource {runWithResource} <- call withCounter counterId 
     runWithResource \case
       Nothing -> (Error Collision, Just (Counter {counterId, counterValue = 0}))
-      Just _ -> (Ok counterId, Nothing) -- UUID collision!
+      Just _ -> (Ok counterId, Nothing) 
 
 -- TODO: generalize this.
 data CounterRepository m = CounterRepository {
@@ -96,12 +99,18 @@ data CounterRepository m = CounterRepository {
     withExistingCounter :: CounterId -> m (WithExistingResource Counter m) 
 }
 
-makeInMemoryCounterRepository :: MonadIO m => IORef (Map CounterId Counter) -> CounterRepository m
-makeInMemoryCounterRepository ref = do
-  let withCounter k = pure $ 
-        WithResource \callback -> do
-          liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
+makeInMemoryCounterRepository :: (MonadIO m, Has Logger m env) => 
+  IORef (Map CounterId Counter) 
+  -> env
+  -> CounterRepository m
+makeInMemoryCounterRepository ref (asCall -> call) = do
+  let withCounter k = do
+        call log "withCounter"
+        pure $ 
+          WithResource \callback -> do
+            liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
       withExistingCounter k = do
+        call log "withExistingCounter"
         z <- withCounter k
         pure $ handleMissing z 
    in CounterRepository {

@@ -54,8 +54,13 @@ import Servant.Server
 import Servant.Server.ToHandler
 import Dep.Has
 import qualified Counter.API as Model
+import Dep.Logger
+import Dep.Logger.HandlerAware
+import Control.Monad.Reader
+import Servant.Server.HandlerContext
 
 data CompositionRoot h m = CompositionRoot {
+  _logger :: h (Logger m),
   _getCounter :: h (GetCounter m), 
   _increaseCounter :: h (IncreaseCounter m), 
   _deleteCounter :: h (DeleteCounter m), 
@@ -66,15 +71,16 @@ data CompositionRoot h m = CompositionRoot {
 
 type Phases m = ContT () IO `Compose` Constructor (CompositionRoot Identity m)
 
-root :: MonadIO m => CompositionRoot (Phases m) m 
+root :: (MonadIO m, MonadReader env m, HasHandlerContext env) => CompositionRoot (Phases m) m 
 root = CompositionRoot {
+  _logger = fromBare $ noAlloc $ \_ -> Dep.Logger.HandlerAware.make,
   _getCounter = fromBare $ noAlloc makeGetCounter,
   _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
   _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
   _createCounter = fromBare $ noAlloc makeCreateCounter,
   _counterRepository = fromBare $ 
     alloc (newIORef Map.empty) 
-      <&> \ref _ -> makeInMemoryCounterRepository ref
+      <&> \ref -> makeInMemoryCounterRepository ref
 }
   where 
     alloc :: IO a -> ContT () IO a
