@@ -1,12 +1,10 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -18,6 +16,13 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | This is the application's "model".
+--
+-- Notice that it's completely ignorant of the Servant API.
+--
+-- Each operation is wrapped in a newtype parameterized by a monad, and it
+-- obtains its dependencies (like loggers) using a helper 'Has' typeclass. This
+-- is done to fit the dependency injection framework we're using.
 module Counter.Model
   ( CounterId(..),
     Counter(..),
@@ -36,7 +41,6 @@ module Counter.Model
 where
 
 import Control.Monad.IO.Class
-import Data.Aeson (FromJSON, ToJSON)
 import Data.Functor
 import Data.Result
 import Data.UUID
@@ -50,14 +54,14 @@ import Prelude hiding (log)
 
 newtype CounterId = CounterId UUID
   deriving stock (Show, Ord, Eq)
-  deriving newtype (FromJSON, ToJSON)
+  -- we could have ToJSON here, but for logging and debugging, not for REST serialization
 
 data Counter = Counter
   { counterId :: CounterId,
     counterValue :: Int
   }
-  deriving stock (Generic)
-  deriving anyclass (FromJSON, ToJSON)
+  deriving stock (Show, Generic)
+  -- we could have ToJSON here, but for logging and debugging, not for REST serialization
 
 type CounterRepository = Repository CounterId Counter
 
@@ -93,4 +97,5 @@ makeCreateCounter (asCall -> call) = CreateCounter do
     Nothing -> (Ok counterId, Just (Counter {counterId, counterValue = 0}))
     Just _ -> (Error Collision, Nothing)
 
+-- | This is a domain-relevant error.
 data Collision = Collision

@@ -8,6 +8,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | This is the Servant API for counters.
+--
+-- It uses named routes for convenience.
+--
+-- Notice that it defines its own datatypes, instead of reusing datatypes from the model.
 module Counter.API where
 
 import Data.Aeson (FromJSON, ToJSON)

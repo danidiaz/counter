@@ -31,7 +31,7 @@ import Counter.Model qualified as Model
 import Counter.Server
 import Data.Functor
 import Data.IORef
-import Data.Kind
+import Data.Kind ( Type )
 import Data.Map.Strict as Map (empty)
 import Data.Proxy
 import Dep.Env
@@ -61,19 +61,31 @@ import Servant.Server
 import Servant.Server.HandlerContext
 import Servant.Server.ToHandler
 
-data Cauldron h m = Cauldron
-  { _logger :: h (Logger m),
-    _getCounter :: h (GetCounter m),
-    _increaseCounter :: h (IncreaseCounter m),
-    _deleteCounter :: h (DeleteCounter m),
-    _createCounter :: h (CreateCounter m),
-    _counterRepository :: h (Model.CounterRepository m)
+-- | The dependency injection context, where all the componets are brought
+-- together and wired.
+--
+-- DI contexts move through a series of phases while they are being build.
+-- Phases are represented as 'Composition's (nestings) of applicative functors
+-- that wrap each component.
+data Cauldron phase m = Cauldron
+  { _logger :: phase (Logger m),
+    _getCounter :: phase (GetCounter m),
+    _increaseCounter :: phase (IncreaseCounter m),
+    _deleteCounter :: phase (DeleteCounter m),
+    _createCounter :: phase (CreateCounter m),
+    _counterRepository :: phase (Model.CounterRepository m)
   }
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
 
+-- | An allocation phase in which components allocate some resource that they'll
+-- use during operation.
+--
+-- Also a good place to start service threads.
 type Allocator = ContT () IO
 
+-- | We have an allocation phase followed by a "wiring" phase in which we tie
+-- the knot to obtain the fully constructed DI context.
 type Phases m = Allocator `Compose` Constructor (Cauldron Identity m)
 
 cauldron :: (MonadIO m, MonadReader env m, HasHandlerContext env) => Cauldron (Phases m) m
@@ -97,14 +109,24 @@ cauldron =
     noDeps :: x -> env -> x
     noDeps = const
 
+-- | Boilerplate that enables components to find their own dependencies in the
+-- DI context.
 deriving via Autowired (Cauldron Identity m) instance Autowireable r_ m (Cauldron Identity m) => Has r_ m (Cauldron Identity m)
 
-type M :: Type -> Type
-type M = ReaderT Env Handler
-
+-- Monad used by the model.
 type M' :: Type -> Type
 type M' = ReaderT Env IO
 
+-- Monad used by the Servant server.
+type M :: Type -> Type
+type M = ReaderT Env Handler
+
+-- | We construct a Servant server by extracting components from the dependency
+-- injection context and using them as handlers. 
+-- 
+-- We need to massage the components a little because they know nothing of
+-- Servant: we need to change the monad, convert model errros to
+-- 'ServantError's, convert API DTOs to and from model datatypes...
 makeServer :: Cauldron Identity M' -> ServerT API M
 makeServer (asCall -> call) = \(_ :: User) ->
   CounterCollectionAPI
@@ -119,8 +141,13 @@ makeServer (asCall -> call) = \(_ :: User) ->
 
 main :: IO ()
 main = do
+  -- We run the allocation phase of the DI context
   runContT (pullPhase cauldron) \allocated -> do
+    -- We run the wiring phase of the DI context
     let wired :: Cauldron Identity M' = fixEnv allocated
+        -- We create the server and instrument it with the handler contexts.
+        -- Omitting 'addHandlerContext' here will still compile, but the log
+        -- messages won't include handler names.
         server = addHandlerContext [] $ makeServer wired
     env <- makeServerEnv
     -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html

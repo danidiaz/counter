@@ -54,6 +54,7 @@ I wanted to scratch the following itches:
     - Convenient way of wiring dependencies like loggers.
     - The dependency injection context is a good place to add debug traces.
         - It sits on top on the module hierarchy, close to `Main`, so recompilations shouldn't be too painful.
+        - It's a place where all types are known and concrete, so their `Show`/`ToJSON` instances are available.
     - Only *direct* dependencies should appear in a component's signature.
         - So `Foo` depends on `Bar`, and `Bar` uses some `BazCache` internally? That's great. But `Foo` should not know *at all* about `BazCache`.
             - Adding `BazCache` to `Bar` and then having to update the signatures of a zillion clients of `Bar`, and of client's clients, is not my idea of fun.
