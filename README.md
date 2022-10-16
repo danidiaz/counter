@@ -34,7 +34,7 @@ I wanted to scratch the following itches:
         - With the help of utilities form the `Servant.Server.ToHandler` module.
     - The Servant API defines its own data transfer objects which mirror datatypes in the model.
         - So, code duplication and the need for conversion functions.
-            - But it could help with versioning.
+            - It could potentially help with versioning.
             - Having to declare `FromHttpApiData` instances for the datatypes in you model feels kind of gross, better define them for your DTOs.
 
 - Server handlers should be "built" using dependency injection.
@@ -42,8 +42,8 @@ I wanted to scratch the following itches:
     - The dependency injection context is a good place to add debug traces.
         - It sits on top on the module hierarchy, close to `Main`, so recompilations shouldn't be too painful.
     - Only *direct* dependencies should appear in a component's signature.
-        - So `Foo` depends on `Bar`, and `Bar` uses some `BazCache` internally? That's great. But `Foo` should not know about `BazCache` it *at all*.
-            - Adding `BazCache` to `Bar` and then having to update the signatures of a zillion clients of `Bar` would be exquisitely painful.
+        - So `Foo` depends on `Bar`, and `Bar` uses some `BazCache` internally? That's great. But `Foo` should not know *at all* about `BazCache`.
+            - Adding `BazCache` to `Bar` and then having to update the signatures of a zillion clients of `Bar`, and of client's clients, is not my idea of fun.
     - I'm using my own library [dep-t](https://hackage.haskell.org/package/dep-t).
 
 - For each logging message emitted *by the model*, I want to print the Servant handler (the handler field name) resposible for triggering it.
@@ -59,3 +59,5 @@ Links
 - [Named routes in Servant](https://www.tweag.io/blog/2022-02-24-named-routes/)
 
 - [How to Haskell: Sharing Data Types is Tight Coupling](https://leapyear.io/resources/blog-posts/how-to-haskell-sharing-data-types-is-tight-coupling/). [tweet](https://twitter.com/DiazCarrete/status/1570487241755197440).
+
+- [Mapped Diagnostic Context in Java's Logback loggin framework](https://logback.qos.ch/manual/mdc.html)
