@@ -15,6 +15,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | A repository implementation that uses an in-memory map.
 module Dep.Repository.Memory (make) where
 
 import Control.Monad.IO.Class
