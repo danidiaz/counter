@@ -31,21 +31,22 @@ import Counter.Model qualified as Model
 import Counter.Server
 import Data.Functor
 import Data.IORef
-import Data.Kind ( Type )
+import Data.Kind (Type)
 import Data.Map.Strict as Map (empty)
 import Data.Proxy
 import Dep.Env
-    ( Identity(Identity),
-      Compose(Compose),
-      fixEnv,
-      fromBare,
-      pullPhase,
-      Autowireable,
-      Autowired(..),
-      Constructor,
-      FieldsFindableByType,
-      Phased )
-import Dep.Has ( Has, asCall )
+  ( Autowireable,
+    Autowired (..),
+    Compose (Compose),
+    Constructor,
+    FieldsFindableByType,
+    Identity (Identity),
+    Phased,
+    fixEnv,
+    fromBare,
+    pullPhase,
+  )
+import Dep.Has (Has (dep), asCall)
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.Repository.Memory
@@ -69,11 +70,12 @@ import Servant.Server.ToHandler
 -- that wrap each component.
 data Cauldron phase m = Cauldron
   { _logger :: phase (Logger m),
+    _counterRepository :: phase (Model.CounterRepository m),
     _getCounter :: phase (GetCounter m),
     _increaseCounter :: phase (IncreaseCounter m),
     _deleteCounter :: phase (DeleteCounter m),
     _createCounter :: phase (CreateCounter m),
-    _counterRepository :: phase (Model.CounterRepository m)
+    _server :: phase (ServantServer m)
   }
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
@@ -88,18 +90,23 @@ type Allocator = ContT () IO
 -- the knot to obtain the fully constructed DI context.
 type Phases m = Allocator `Compose` Constructor (Cauldron Identity m)
 
-cauldron :: (MonadIO m, MonadReader env m, HasHandlerContext env) => Cauldron (Phases m) m
+-- Monad used by the model.
+type M' :: Type -> Type
+type M' = ReaderT Env IO
+
+cauldron :: Cauldron (Phases M') M'
 cauldron =
   Cauldron
     { _logger = fromBare $ noAlloc $ noDeps Dep.Logger.HandlerAware.make,
+      _counterRepository =
+        fromBare $
+          alloc (newIORef Map.empty)
+            <&> \ref -> Dep.Repository.Memory.make ref,
       _getCounter = fromBare $ noAlloc makeGetCounter,
       _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
       _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
       _createCounter = fromBare $ noAlloc makeCreateCounter,
-      _counterRepository =
-        fromBare $
-          alloc (newIORef Map.empty)
-            <&> \ref -> Dep.Repository.Memory.make ref
+      _server = fromBare $ noAlloc makeServantServer
     }
   where
     alloc :: IO a -> ContT () IO a
@@ -113,22 +120,27 @@ cauldron =
 -- DI context.
 deriving via Autowired (Cauldron Identity m) instance Autowireable r_ m (Cauldron Identity m) => Has r_ m (Cauldron Identity m)
 
--- Monad used by the model.
-type M' :: Type -> Type
-type M' = ReaderT Env IO
-
 -- Monad used by the Servant server.
 type M :: Type -> Type
 type M = ReaderT Env Handler
 
+type ServantServer :: (Type -> Type) -> Type
+newtype ServantServer m = ServantServer (ServerT API M)
+
 -- | We construct a Servant server by extracting components from the dependency
--- injection context and using them as handlers. 
--- 
+-- injection context and using them as handlers.
+--
 -- We need to massage the components a little because they know nothing of
 -- Servant: we need to change the monad, convert model errros to
 -- 'ServantError's, convert API DTOs to and from model datatypes...
-makeServer :: Cauldron Identity M' -> ServerT API M
-makeServer (asCall -> call) = \(_ :: User) ->
+makeServantServer :: (m ~ M',
+    Has GetCounter m cauldron,
+    Has IncreaseCounter m cauldron,
+    Has DeleteCounter m cauldron,
+    Has CreateCounter m cauldron
+  ) => cauldron -> ServantServer m
+makeServantServer (asCall -> call) = ServantServer 
+  \(_ :: User) ->
   CounterCollectionAPI
     { counters = \counterId -> do
         CounterAPI
@@ -145,10 +157,10 @@ main = do
   runContT (pullPhase cauldron) \allocated -> do
     -- We run the wiring phase of the DI context
     let wired :: Cauldron Identity M' = fixEnv allocated
-        -- We create the server and instrument it with the handler contexts.
+        -- We extract the server and instrument it with the handler contexts.
         -- Omitting 'addHandlerContext' here will still compile, but the log
         -- messages won't include handler names.
-        server = addHandlerContext [] $ makeServer wired
+        ServantServer (addHandlerContext [] -> server) = dep wired
     env <- makeServerEnv
     -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
     let hoistedServer =
