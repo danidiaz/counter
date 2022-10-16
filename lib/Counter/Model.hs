@@ -90,8 +90,8 @@ makeCreateCounter (asCall -> call) = CreateCounter do
     counterId <- CounterId <$> liftIO nextRandom
     WithResource {runWithResource} <- call withCounter counterId 
     runWithResource \case
-      Nothing -> (Error Collision, Just (Counter {counterId, counterValue = 0}))
-      Just _ -> (Ok counterId, Nothing) 
+      Nothing -> (Ok counterId, Just (Counter {counterId, counterValue = 0})) 
+      Just _ -> (Error Collision, Nothing)
 
 -- TODO: generalize this.
 data CounterRepository m = CounterRepository {

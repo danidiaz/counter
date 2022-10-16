@@ -10,5 +10,5 @@ import Control.Lens
 make :: (MonadIO m, MonadReader env m, HasHandlerContext env) => Logger m 
 make = Logger \message -> do
     context <- view handlerContext 
-    liftIO $ putStrLn $ show context ++ ". " ++ message
+    liftIO $ putStrLn $ show context ++ " " ++ message
     pure ()

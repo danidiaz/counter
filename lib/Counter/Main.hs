@@ -73,7 +73,7 @@ type Phases m = ContT () IO `Compose` Constructor (CompositionRoot Identity m)
 
 root :: (MonadIO m, MonadReader env m, HasHandlerContext env) => CompositionRoot (Phases m) m 
 root = CompositionRoot {
-  _logger = fromBare $ noAlloc $ \_ -> Dep.Logger.HandlerAware.make,
+  _logger = fromBare $ noAlloc $ noDeps Dep.Logger.HandlerAware.make,
   _getCounter = fromBare $ noAlloc makeGetCounter,
   _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
   _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
@@ -87,6 +87,8 @@ root = CompositionRoot {
     alloc = liftIO
     noAlloc :: a -> ContT () IO a
     noAlloc = pure
+    noDeps :: x -> env -> x
+    noDeps = const
 
 deriving via Autowired (CompositionRoot Identity m) instance Autowireable r_ m (CompositionRoot Identity m) => Has r_ m (CompositionRoot Identity m)
 
@@ -106,7 +108,7 @@ main :: IO ()
 main = do
   runContT (pullPhase root) \allocated -> do
     let ready :: CompositionRoot Identity M' = fixEnv allocated
-        server = makeServer ready
+        server = addHandlerContext [] $ makeServer ready
     env <- makeServerEnv
     -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
     let server' = hoistServerWithContext (Proxy @API) (Proxy @'[BasicAuthCheck User]) (`runReaderT` env) server
