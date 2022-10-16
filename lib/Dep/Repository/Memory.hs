@@ -15,7 +15,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Dep.Repository.Memory where
+module Dep.Repository.Memory (make) where
 
 import Control.Monad.IO.Class
 import Data.IORef

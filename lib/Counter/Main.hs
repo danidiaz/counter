@@ -7,17 +7,18 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Counter.Main where
 
@@ -30,24 +31,37 @@ import Counter.Model qualified as Model
 import Counter.Server
 import Data.Functor
 import Data.IORef
+import Data.Kind
 import Data.Map.Strict as Map (empty)
 import Data.Proxy
 import Dep.Env
-import Dep.Has
+    ( Identity(Identity),
+      Compose(Compose),
+      fixEnv,
+      fromBare,
+      pullPhase,
+      Autowireable,
+      Autowired(..),
+      Constructor,
+      FieldsFindableByType,
+      Phased )
+import Dep.Has ( Has, asCall )
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.Repository.Memory
 import GHC.Generics (Generic)
 import Network.Wai.Handler.Warp (run)
 import Servant.Server
-    ( serveWithContext,
-      HasServer(hoistServerWithContext, ServerT),
-      BasicAuthCheck,
-      Application )
+  ( Application,
+    BasicAuthCheck,
+    Handler,
+    HasServer (ServerT, hoistServerWithContext),
+    serveWithContext,
+  )
 import Servant.Server.HandlerContext
 import Servant.Server.ToHandler
 
-data CompositionRoot h m = CompositionRoot
+data Cauldron h m = Cauldron
   { _logger :: h (Logger m),
     _getCounter :: h (GetCounter m),
     _increaseCounter :: h (IncreaseCounter m),
@@ -58,11 +72,13 @@ data CompositionRoot h m = CompositionRoot
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
 
-type Phases m = ContT () IO `Compose` Constructor (CompositionRoot Identity m)
+type Allocator = ContT () IO
 
-root :: (MonadIO m, MonadReader env m, HasHandlerContext env) => CompositionRoot (Phases m) m
-root =
-  CompositionRoot
+type Phases m = Allocator `Compose` Constructor (Cauldron Identity m)
+
+cauldron :: (MonadIO m, MonadReader env m, HasHandlerContext env) => Cauldron (Phases m) m
+cauldron =
+  Cauldron
     { _logger = fromBare $ noAlloc $ noDeps Dep.Logger.HandlerAware.make,
       _getCounter = fromBare $ noAlloc makeGetCounter,
       _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
@@ -81,11 +97,17 @@ root =
     noDeps :: x -> env -> x
     noDeps = const
 
-deriving via Autowired (CompositionRoot Identity m) instance Autowireable r_ m (CompositionRoot Identity m) => Has r_ m (CompositionRoot Identity m)
+deriving via Autowired (Cauldron Identity m) instance Autowireable r_ m (Cauldron Identity m) => Has r_ m (Cauldron Identity m)
 
-makeServer :: CompositionRoot Identity M' -> ServerT API M
+type M :: Type -> Type
+type M = ReaderT Env Handler
+
+type M' :: Type -> Type
+type M' = ReaderT Env IO
+
+makeServer :: Cauldron Identity M' -> ServerT API M
 makeServer (asCall -> call) = \(_ :: User) ->
-  CountersAPI
+  CounterCollectionAPI
     { counters = \(fromDTO @X -> counterId) -> do
         CounterAPI
           { increase = toHandler @X (call Model.increaseCounter counterId),
@@ -97,12 +119,17 @@ makeServer (asCall -> call) = \(_ :: User) ->
 
 main :: IO ()
 main = do
-  runContT (pullPhase root) \allocated -> do
-    let ready :: CompositionRoot Identity M' = fixEnv allocated
-        server = addHandlerContext [] $ makeServer ready
+  runContT (pullPhase cauldron) \allocated -> do
+    let wired :: Cauldron Identity M' = fixEnv allocated
+        server = addHandlerContext [] $ makeServer wired
     env <- makeServerEnv
     -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
-    let server' = hoistServerWithContext (Proxy @API) (Proxy @'[BasicAuthCheck User]) (`runReaderT` env) server
+    let hoistedServer =
+          hoistServerWithContext
+            (Proxy @API)
+            (Proxy @'[BasicAuthCheck User])
+            (`runReaderT` env)
+            server
         app :: Application
-        app = serveWithContext (Proxy @API) basicAuthServerContext server'
+        app = serveWithContext (Proxy @API) basicAuthServerContext hoistedServer
     run 8000 app

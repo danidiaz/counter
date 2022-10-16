@@ -13,7 +13,12 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Servant.Server.HandlerContext where
+module Servant.Server.HandlerContext (
+  FieldName,
+  HandlerContext,
+  HasHandlerContext(handlerContext),
+  AddHandlerContext(addHandlerContext)
+) where
 
 import Control.Lens ( locally )
 import Control.Monad.Trans.Reader

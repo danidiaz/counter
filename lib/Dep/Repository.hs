@@ -11,7 +11,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Dep.Repository where
+module Dep.Repository (
+    Repository(..),
+    RunWithResource(..),
+    RunWithExistingResource(..),
+    Missing (Missing),
+) where
 
 import Data.Result
 

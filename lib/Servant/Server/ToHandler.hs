@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PartialTypeSignatures #-}
@@ -15,16 +14,20 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Servant.Server.ToHandler where
+module Servant.Server.ToHandler (
+  ToHandler (toHandler),
+  ToServerError(toServerError),
+  ToDTO(toDTO),
+  FromDTO(fromDTO),
+) where
 
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Coerce
 import Data.Result
 import Servant.Server
-  ( 
-    Handler (..),
-    ServerError
+  ( Handler (..),
+    ServerError,
   )
 
 class ToHandler mark before after where

@@ -19,7 +19,18 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Counter.Model
-  ( module Counter.Model,
+  ( CounterId(..),
+    Counter(..),
+    CounterRepository,
+    CreateCounter(..),
+    makeCreateCounter,
+    GetCounter(..),
+    makeGetCounter,
+    IncreaseCounter(..),
+    makeIncreaseCounter,
+    DeleteCounter(..),
+    makeDeleteCounter,
+    Collision (..),
     Missing (..),
   )
 where

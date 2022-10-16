@@ -12,13 +12,18 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Counter.Server where
+module Counter.Server (
+  X(X),
+  Env(..),
+  makeServerEnv,
+  authCheck,
+  basicAuthServerContext,
+) where
 
 import Counter.API
 import Counter.API qualified as API
@@ -27,16 +32,13 @@ import Counter.Model qualified as Model
 import Data.Coerce
 import Data.Function
 import Data.Functor
-import Data.Kind
 import GHC.Generics
 import GHC.Records
 import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
-import Control.Monad.Trans.Reader
 import Servant.Server
   ( BasicAuthCheck (BasicAuthCheck),
     BasicAuthResult (Authorized, Unauthorized),
     Context (..),
-    Handler (..),
     err404,
     err500,
   )
@@ -54,11 +56,6 @@ instance HasHandlerContext Env where
   handlerContext f s =
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
-type M :: Type -> Type
-type M = ReaderT Env Handler
-
-type M' :: Type -> Type
-type M' = ReaderT Env IO
 
 data X = X
 

@@ -16,9 +16,9 @@ import Data.UUID
 import Servant.API
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
 
-type API = BasicAuth "foo-realm" User :> "counter" :> NamedRoutes CountersAPI
+type API = BasicAuth "foo-realm" User :> "counter" :> NamedRoutes CounterCollectionAPI
 
-data CountersAPI mode = CountersAPI
+data CounterCollectionAPI mode = CounterCollectionAPI
   { counters :: mode :- Capture "counterId" CounterId :> NamedRoutes CounterAPI,
     create :: mode :- Post '[JSON] CounterId
   }
