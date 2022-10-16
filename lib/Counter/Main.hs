@@ -130,11 +130,11 @@ type M = ReaderT Env Handler
 makeServer :: Cauldron Identity M' -> ServerT API M
 makeServer (asCall -> call) = \(_ :: User) ->
   CounterCollectionAPI
-    { counters = \(fromDTO @X -> counterId) -> do
+    { counters = \counterId -> do
         CounterAPI
-          { increase = toHandler @X (call Model.increaseCounter counterId),
-            query = toHandler @X (call Model.getCounter counterId),
-            delete = toHandler @X (call Model.deleteCounter counterId)
+          { increase = toHandler @X (call Model.increaseCounter) counterId,
+            query = toHandler @X (call Model.getCounter) counterId,
+            delete = toHandler @X (call Model.deleteCounter) counterId
           },
       create = toHandler @X (call Model.createCounter)
     }
