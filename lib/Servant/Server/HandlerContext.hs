@@ -13,6 +13,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | A server typeclass for servant servers with names routes.
+
 module Servant.Server.HandlerContext (
   FieldName,
   HandlerContext,
@@ -20,20 +22,26 @@ module Servant.Server.HandlerContext (
   AddHandlerContext(addHandlerContext)
 ) where
 
-import Control.Lens ( locally )
+import Control.Lens ( locally, Lens')
 import Control.Monad.Trans.Reader
 import Data.Kind
 import Data.Typeable ( Typeable, TypeRep, Proxy(Proxy), typeRep )
 import GHC.Generics qualified as G
 import GHC.TypeLits ( KnownSymbol, symbolVal )
 
+-- | Name of a named route in a route record.
 type FieldName = String
 
+-- | Identifies the current handler by the 'TypeRep' of the route record and the field name of
+-- the route. 
+-- 
+-- It's a list because named route records can be nested. Inner records appear first.
 type HandlerContext = [(TypeRep, FieldName)]
 
+-- | Reader environments that keep track of a 'HandlerContext'.  
 class HasHandlerContext e where
   -- | A lens from the environment to the call stack.
-  handlerContext :: forall f. Functor f => (HandlerContext -> f HandlerContext) -> e -> f e
+  handlerContext :: Lens' e HandlerContext
 
 -- | The trivial case, useful when 'HandlerContext' is the environment type
 
@@ -42,6 +50,7 @@ class HasHandlerContext e where
 instance HasHandlerContext HandlerContext where
   handlerContext = id
 
+-- | Extra piece of info to help avoid overlapping instances.
 data Cases
   = AtTheTip
   | Function
@@ -53,8 +62,13 @@ type family DetermineCase server where
   DetermineCase (a -> b) = 'Function
   DetermineCase _ = 'NamedRoutes
 
+-- | Traverse a Servant server and put the name of the current (possibly nested)
+-- route in the reader environment so that it's available for logging purposes.
 class AddHandlerContext server where
-  addHandlerContext :: HandlerContext -> server -> server
+  addHandlerContext :: 
+    HandlerContext -- accumulated route. starts empty.
+    -> server 
+    -> server
 
 class AddHandlerContext' (c :: Cases) server where
   addHandlerContext' :: HandlerContext -> server -> server
