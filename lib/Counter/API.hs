@@ -1,22 +1,20 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Counter.API where
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Text
 import Data.UUID
 import Servant.API
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
-import Data.Aeson (FromJSON, ToJSON)
 
 type API = BasicAuth "foo-realm" User :> "counter" :> NamedRoutes CountersAPI
 
@@ -36,12 +34,13 @@ data CounterAPI mode = CounterAPI
 newtype User = User {userName :: Text}
   deriving (Eq, Show)
 
-newtype CounterId = CounterId UUID 
+newtype CounterId = CounterId UUID
   deriving stock (Ord, Eq)
   deriving newtype (FromJSON, ToJSON, FromHttpApiData)
 
-data Counter = Counter {
-    counterId :: CounterId,
+data Counter = Counter
+  { counterId :: CounterId,
     counterValue :: Int
-} deriving stock Generic
+  }
+  deriving stock (Generic)
   deriving anyclass (FromJSON, ToJSON)

@@ -1,71 +1,36 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE InstanceSigs #-}
 
 module Servant.Server.ToHandler where
 
-import Control.Lens (Lens', view, Getter, iat)
 import Control.Monad.Except
-import Control.Monad.IO.Class
-import Control.Monad.IO.Unlift
 import Control.Monad.Reader
-import Control.Monad.Trans.Except
-import Control.Monad.Trans.Identity
-import Control.Monad.Trans.Reader
-import Counter.API
 import Data.Coerce
-import Data.IORef
-import Data.Kind
-import Data.Map.Strict as Map (Map, empty)
-import Data.Map.Strict qualified as Map
-import Data.Tuple (swap)
-import Data.UUID
-import Data.UUID.V4
-import Dep.Env
-import Dep.Has
-import GHC.Generics
-import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
-import Servant.Server
-import GHC.Records
-import Data.Functor
-import Data.Function
 import Data.Result
 import Servant.Server
-  ( BasicAuthCheck (BasicAuthCheck),
-    BasicAuthResult (Authorized, Unauthorized),
-    Context (..),
+  ( 
     Handler (..),
-    Server,
-    err500,
+    ServerError
   )
-import Servant.Server.Generic (AsServerT)
-import Counter.Model
-
 
 class ToHandler mark before after where
   toHandler :: before -> after
 
-instance (FromDTO mark a' a, ToHandler mark b b') => ToHandler mark (a -> b) (a' -> b') where 
+instance (FromDTO mark a' a, ToHandler mark b b') => ToHandler mark (a -> b) (a' -> b') where
   toHandler f = toHandler @mark . (f . fromDTO @mark)
 
 instance ToHandlerResult mark a a' => ToHandler mark (ReaderT env IO a) (ReaderT env Handler a') where
@@ -91,7 +56,7 @@ instance ToDTO mark a' a => ToHandlerResult' mark 'IsNotResult a a' where
   toHandlerResult' = Right . toDTO @mark
 
 instance (ToServerError mark err, ToHandlerResult mark a a') => ToHandlerResult' mark 'IsResult (Result err a) a' where
-  toHandlerResult' = \case 
+  toHandlerResult' = \case
     Error err -> Left (toServerError @mark err)
     Ok r -> toHandlerResult @mark r
 
@@ -99,7 +64,7 @@ class ToServerError mark x where
   toServerError :: x -> ServerError
 
 class ToDTO mark dto model | mark dto -> model where
-    toDTO :: model -> dto
+  toDTO :: model -> dto
 
 class FromDTO mark dto model | mark dto -> model where
-    fromDTO :: dto -> model
+  fromDTO :: dto -> model

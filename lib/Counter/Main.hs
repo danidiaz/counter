@@ -1,88 +1,79 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 module Counter.Main where
 
-import Control.Monad.Trans.Reader
-import Counter.API
-import Counter.Server
-import Data.Proxy
-import Network.Wai.Handler.Warp (run)
-import Servant.Server (Application, BasicAuthCheck, hoistServerWithContext, serveWithContext)
 import Control.Monad.IO.Class
-import Data.Functor
-
-import Dep.Env
-import Counter.Model
-import qualified Counter.Model as Model
-
-import GHC.Generics (Generic)
+import Control.Monad.Reader
 import Control.Monad.Trans.Cont
-import Data.Map.Strict as Map (Map, empty)
+import Counter.API
+import Counter.Model
+import Counter.Model qualified as Model
+import Counter.Server
+import Data.Functor
 import Data.IORef
-import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
-import Servant.Server
-import Servant.Server.ToHandler
+import Data.Map.Strict as Map (empty)
+import Data.Proxy
+import Dep.Env
 import Dep.Has
-import qualified Counter.API as Model
 import Dep.Logger
 import Dep.Logger.HandlerAware
-import Control.Monad.Reader
+import Dep.Repository.Memory
+import GHC.Generics (Generic)
+import Network.Wai.Handler.Warp (run)
+import Servant.Server
+    ( serveWithContext,
+      HasServer(hoistServerWithContext, ServerT),
+      BasicAuthCheck,
+      Application )
 import Servant.Server.HandlerContext
+import Servant.Server.ToHandler
 
-data CompositionRoot h m = CompositionRoot {
-  _logger :: h (Logger m),
-  _getCounter :: h (GetCounter m), 
-  _increaseCounter :: h (IncreaseCounter m), 
-  _deleteCounter :: h (DeleteCounter m), 
-  _createCounter :: h (CreateCounter m),
-  _counterRepository :: h (CounterRepository m)
-} deriving stock (Generic) 
+data CompositionRoot h m = CompositionRoot
+  { _logger :: h (Logger m),
+    _getCounter :: h (GetCounter m),
+    _increaseCounter :: h (IncreaseCounter m),
+    _deleteCounter :: h (DeleteCounter m),
+    _createCounter :: h (CreateCounter m),
+    _counterRepository :: h (Model.CounterRepository m)
+  }
+  deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
 
 type Phases m = ContT () IO `Compose` Constructor (CompositionRoot Identity m)
 
-root :: (MonadIO m, MonadReader env m, HasHandlerContext env) => CompositionRoot (Phases m) m 
-root = CompositionRoot {
-  _logger = fromBare $ noAlloc $ noDeps Dep.Logger.HandlerAware.make,
-  _getCounter = fromBare $ noAlloc makeGetCounter,
-  _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
-  _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
-  _createCounter = fromBare $ noAlloc makeCreateCounter,
-  _counterRepository = fromBare $ 
-    alloc (newIORef Map.empty) 
-      <&> \ref -> makeInMemoryCounterRepository ref
-}
-  where 
+root :: (MonadIO m, MonadReader env m, HasHandlerContext env) => CompositionRoot (Phases m) m
+root =
+  CompositionRoot
+    { _logger = fromBare $ noAlloc $ noDeps Dep.Logger.HandlerAware.make,
+      _getCounter = fromBare $ noAlloc makeGetCounter,
+      _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
+      _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
+      _createCounter = fromBare $ noAlloc makeCreateCounter,
+      _counterRepository =
+        fromBare $
+          alloc (newIORef Map.empty)
+            <&> \ref -> Dep.Repository.Memory.make ref
+    }
+  where
     alloc :: IO a -> ContT () IO a
     alloc = liftIO
     noAlloc :: a -> ContT () IO a
@@ -93,16 +84,16 @@ root = CompositionRoot {
 deriving via Autowired (CompositionRoot Identity m) instance Autowireable r_ m (CompositionRoot Identity m) => Has r_ m (CompositionRoot Identity m)
 
 makeServer :: CompositionRoot Identity M' -> ServerT API M
-makeServer (asCall -> call) = \user -> CountersAPI
+makeServer (asCall -> call) = \(_ :: User) ->
+  CountersAPI
     { counters = \(fromDTO @X -> counterId) -> do
-         CounterAPI
-              { increase = toHandler @X (call Model.increaseCounter counterId), 
-                query = toHandler @X (call Model.getCounter counterId),
-                delete = toHandler @X (call Model.deleteCounter counterId)
-              },
+        CounterAPI
+          { increase = toHandler @X (call Model.increaseCounter counterId),
+            query = toHandler @X (call Model.getCounter counterId),
+            delete = toHandler @X (call Model.deleteCounter counterId)
+          },
       create = toHandler @X (call Model.createCounter)
     }
-
 
 main :: IO ()
 main = do

@@ -26,15 +26,17 @@ executable counter
 
 library lib-counter
     import:           warnings
-    exposed-modules:  Counter.API
+    exposed-modules:  Counter.Main
+                      Counter.API
                       Counter.Server
-                      Counter.Main
                       Counter.Model
                       Data.Result
                       Servant.Server.ToHandler
                       Servant.Server.HandlerContext
                       Dep.Logger
                       Dep.Logger.HandlerAware
+                      Dep.Repository
+                      Dep.Repository.Memory
     hs-source-dirs:   lib
     build-depends:    containers                         >= 0.6.4 && < 0.7,
                       mtl                                >= 2.2.2 && < 2.3,
