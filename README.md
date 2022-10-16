@@ -35,6 +35,7 @@ I wanted to scratch the following itches:
     - The Servant API defines its own data transfer objects which mirror datatypes in the model.
         - So, code duplication and the need for conversion functions.
             - It could potentially help with versioning.
+            - It could potentially help when generating Servant APIs from OpenAPI specs.
             - Having to declare `FromHttpApiData` instances for the datatypes in you model feels kind of gross, better define them for your DTOs.
 
 - Server handlers should be "built" using dependency injection.
