@@ -11,5 +11,5 @@ import Servant.Server.HandlerContext
 make :: (MonadIO m, MonadReader env m, HasHandlerContext env) => Logger m
 make = Logger \message -> do
   context <- view handlerContext
-  liftIO $ putStrLn $ show context ++ " " ++ message
+  liftIO $ putStrLn $ show (reverse context) ++ " " ++ message
   pure ()
