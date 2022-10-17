@@ -75,7 +75,7 @@ data Cauldron phase m = Cauldron
     _increaseCounter :: phase (IncreaseCounter m),
     _deleteCounter :: phase (DeleteCounter m),
     _createCounter :: phase (CreateCounter m),
-    _server :: phase (ServantServer m)
+    _server :: phase (ServantServer Env m)
   }
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
@@ -124,8 +124,14 @@ deriving via Autowired (Cauldron Identity m) instance Autowireable r_ m (Cauldro
 type M :: Type -> Type
 type M = ReaderT Env Handler
 
-type ServantServer :: (Type -> Type) -> Type
-newtype ServantServer m = ServantServer (ServerT API M)
+-- | The type parameters here are a bit weird compared to other components.
+--
+-- @m@ is not really used as the server monad. 
+--
+-- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
+-- instances require a 'ReaderT' monad to work.
+type ServantServer :: Type -> (Type -> Type) -> Type
+newtype ServantServer env m = ServantServer (ServerT API (ReaderT env Handler))
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.
@@ -133,12 +139,12 @@ newtype ServantServer m = ServantServer (ServerT API M)
 -- We need to massage the components a little because they know nothing of
 -- Servant: we need to change the monad, convert model errros to
 -- 'ServantError's, convert API DTOs to and from model datatypes...
-makeServantServer :: (m ~ M',
+makeServantServer :: (m ~ ReaderT env IO,
     Has GetCounter m cauldron,
     Has IncreaseCounter m cauldron,
     Has DeleteCounter m cauldron,
     Has CreateCounter m cauldron
-  ) => cauldron -> ServantServer m
+  ) => cauldron -> ServantServer env m
 makeServantServer (asCall -> call) = ServantServer 
   \(_ :: User) ->
   CounterCollectionAPI
