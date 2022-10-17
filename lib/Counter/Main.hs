@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
@@ -106,7 +107,14 @@ cauldron =
       _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
       _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
       _createCounter = fromBare $ noAlloc makeCreateCounter,
-      _server = fromBare $ noAlloc makeServantServer
+      _server =
+        -- Is this the best place to call 'addHandlerContext'?  It could be done
+        -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
+        -- would require extra constraints in the function, and it would be
+        -- farther from the component which uses the HandlerContext, which is
+        -- the Logger.
+        fromBare (noAlloc makeServantServer) <&> \(ServantServer {server}) ->
+          ServantServer {server = addHandlerContext [] server}
     }
   where
     alloc :: IO a -> ContT () IO a
@@ -126,12 +134,12 @@ type M = ReaderT Env Handler
 
 -- | The type parameters here are a bit weird compared to other components.
 --
--- @m@ is not really used as the server monad. 
+-- @m@ is not really used as the server monad.
 --
 -- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
 -- instances require a 'ReaderT' monad to work.
 type ServantServer :: Type -> (Type -> Type) -> Type
-newtype ServantServer env m = ServantServer (ServerT API (ReaderT env Handler))
+newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env Handler)}
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.
@@ -139,23 +147,26 @@ newtype ServantServer env m = ServantServer (ServerT API (ReaderT env Handler))
 -- We need to massage the components a little because they know nothing of
 -- Servant: we need to change the monad, convert model errros to
 -- 'ServantError's, convert API DTOs to and from model datatypes...
-makeServantServer :: (m ~ ReaderT env IO,
+makeServantServer ::
+  ( m ~ ReaderT env IO,
     Has GetCounter m cauldron,
     Has IncreaseCounter m cauldron,
     Has DeleteCounter m cauldron,
     Has CreateCounter m cauldron
-  ) => cauldron -> ServantServer env m
-makeServantServer (asCall -> call) = ServantServer 
+  ) =>
+  cauldron ->
+  ServantServer env m
+makeServantServer (asCall -> call) = ServantServer
   \(_ :: User) ->
-  CounterCollectionAPI
-    { counters = \counterId -> do
-        CounterAPI
-          { increase = toHandler @X (call Model.increaseCounter) counterId,
-            query = toHandler @X (call Model.getCounter) counterId,
-            delete = toHandler @X (call Model.deleteCounter) counterId
-          },
-      create = toHandler @X (call Model.createCounter)
-    }
+    CounterCollectionAPI
+      { counters = \counterId -> do
+          CounterAPI
+            { increase = toHandler @X (call Model.increaseCounter) counterId,
+              query = toHandler @X (call Model.getCounter) counterId,
+              delete = toHandler @X (call Model.deleteCounter) counterId
+            },
+        create = toHandler @X (call Model.createCounter)
+      }
 
 main :: IO ()
 main = do
@@ -163,10 +174,8 @@ main = do
   runContT (pullPhase cauldron) \allocated -> do
     -- We run the wiring phase of the DI context
     let wired :: Cauldron Identity M' = fixEnv allocated
-        -- We extract the server and instrument it with the handler contexts.
-        -- Omitting 'addHandlerContext' here will still compile, but the log
-        -- messages won't include handler names.
-        ServantServer (addHandlerContext [] -> server) = dep wired
+        -- We extract the server from the DI context.
+        ServantServer {server} = dep wired
     env <- makeServerEnv
     -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
     let hoistedServer =
