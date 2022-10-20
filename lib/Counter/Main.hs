@@ -104,8 +104,8 @@ cauldron =
     { _logger = fromBare $ noAlloc $ noDeps Dep.Logger.HandlerAware.make,
       _counterRepository =
         fromBare $
-          alloc (newIORef Map.empty)
-            <&> \ref env@(Call call) -> 
+          alloc (newIORef Map.empty) <&> \ref ->
+            \env@(Call call) -> 
               let repo@Repository { withResource } = Dep.Repository.Memory.make ref env
                in repo { withResource = \rid -> do 
                     call log "Extra log message added by instrumentation"
