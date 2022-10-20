@@ -101,7 +101,7 @@ type M' = ReaderT Env IO
 cauldron :: Cauldron (Phases M') M'
 cauldron =
   Cauldron
-    { _logger = fromBare $ noAlloc $ noDeps Dep.Logger.HandlerAware.make,
+    { _logger = fromBare $ noAlloc <&> \() -> Dep.Logger.HandlerAware.make,
       _counterRepository =
         fromBare $
           alloc (newIORef Map.empty) <&> \ref ->
@@ -112,26 +112,24 @@ cauldron =
                         call log "Extra log message added by instrumentation"
                         withResource rid
                     },
-      _getCounter = fromBare $ noAlloc makeGetCounter,
-      _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
-      _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
-      _createCounter = fromBare $ noAlloc makeCreateCounter,
+      _getCounter = fromBare $ noAlloc <&> \() -> makeGetCounter,
+      _increaseCounter = fromBare $ noAlloc <&> \() -> makeIncreaseCounter,
+      _deleteCounter = fromBare $ noAlloc <&> \() -> makeDeleteCounter,
+      _createCounter = fromBare $ noAlloc <&> \() -> makeCreateCounter,
       _server =
         -- Is this the best place to call 'addHandlerContext'?  It could be done
         -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
         -- would require extra constraints in the function, and it would be
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
-        fromBare (noAlloc makeServantServer) <&> \(ServantServer {server}) ->
+        fromBare $ noAlloc <&> \() -> makeServantServer <&> \(ServantServer {server}) ->
           ServantServer {server = addHandlerContext [] server}
     }
   where
     alloc :: IO a -> ContT () IO a
     alloc = liftIO
-    noAlloc :: a -> ContT () IO a
-    noAlloc = pure
-    noDeps :: x -> env -> x
-    noDeps = const
+    noAlloc :: ContT () IO ()
+    noAlloc = pure ()
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.

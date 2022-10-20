@@ -17,11 +17,13 @@ import Servant.Server.HandlerContext
 -- implementation.
 make ::
   ( MonadIO m,
-    MonadReader env m,
-    HasHandlerContext env
+    MonadReader renv m,
+    HasHandlerContext renv
   ) =>
+  -- | not used, but for consistency with other components
+  env ->
   Logger m
-make = Logger \message -> do
+make _ = Logger \message -> do
   context <- view handlerContext
   liftIO $ putStrLn $ show (reverse context) ++ " " ++ message
   pure ()
