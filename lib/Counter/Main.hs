@@ -105,12 +105,13 @@ cauldron =
       _counterRepository =
         fromBare $
           alloc (newIORef Map.empty) <&> \ref ->
-            \env@(Call call) -> 
-              let repo@Repository { withResource } = Dep.Repository.Memory.make ref env
-               in repo { withResource = \rid -> do 
-                    call log "Extra log message added by instrumentation"
-                    withResource rid
-                  },
+            \env@(Call call) ->
+              let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
+               in repo
+                    { withResource = \rid -> do
+                        call log "Extra log message added by instrumentation"
+                        withResource rid
+                    },
       _getCounter = fromBare $ noAlloc makeGetCounter,
       _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
       _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
