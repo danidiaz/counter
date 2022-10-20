@@ -104,14 +104,13 @@ cauldron =
     { _logger = fromBare $ noAlloc <&> \() -> Dep.Logger.HandlerAware.make,
       _counterRepository =
         fromBare $
-          alloc (newIORef Map.empty) <&> \ref ->
-            \env@(Call call) ->
-              let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
-               in repo
-                    { withResource = \rid -> do
-                        call log "Extra log message added by instrumentation"
-                        withResource rid
-                    },
+          alloc (newIORef Map.empty) <&> \ref env@(Call call) ->
+            let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
+             in repo
+                  { withResource = \rid -> do
+                      call log "Extra log message added by instrumentation"
+                      withResource rid
+                  },
       _getCounter = fromBare $ noAlloc <&> \() -> makeGetCounter,
       _increaseCounter = fromBare $ noAlloc <&> \() -> makeIncreaseCounter,
       _deleteCounter = fromBare $ noAlloc <&> \() -> makeDeleteCounter,
@@ -122,8 +121,10 @@ cauldron =
         -- would require extra constraints in the function, and it would be
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
-        fromBare $ noAlloc <&> \() -> makeServantServer <&> \(ServantServer {server}) ->
-          ServantServer {server = addHandlerContext [] server}
+        fromBare $
+          noAlloc <&> \() env ->
+            let servantServer@(ServantServer {server}) = makeServantServer env
+             in servantServer {server = addHandlerContext [] server}
     }
   where
     alloc :: IO a -> ContT () IO a
