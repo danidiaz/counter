@@ -47,7 +47,8 @@ import Dep.Env
     fromBare,
     pullPhase,
   )
-import Dep.Has (Has (dep), asCall)
+import Dep.Has (Has (dep))
+import Dep.Has.Call
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.Repository.Memory
@@ -156,7 +157,7 @@ makeServantServer ::
   ) =>
   cauldron ->
   ServantServer env m
-makeServantServer (asCall -> call) = ServantServer
+makeServantServer (Call call) = ServantServer
   \(_ :: User) ->
     CounterCollectionAPI
       { counters = \counterId -> do

@@ -24,10 +24,14 @@ import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Result
 import Data.Tuple (swap)
-import Dep.Env
 import Dep.Has
-import Dep.Logger
+import Dep.Has.Call
+import Dep.Logger ( Logger(log) )
 import Dep.Repository
+    ( Repository(..),
+      RunWithExistingResource(RunWithExistingResource),
+      RunWithResource(..),
+      Missing(Missing) )
 import Prelude hiding (log)
 
 make ::
@@ -35,7 +39,7 @@ make ::
   IORef (Map rid resource) ->
   env ->
   Repository rid resource m
-make ref (asCall -> call) = do
+make ref (Call call) = do
   let withResource k = do
         call log "withResource"
         pure $
