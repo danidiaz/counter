@@ -26,16 +26,23 @@ import Data.Result
 import Data.Tuple (swap)
 import Dep.Has
 import Dep.Has.Call
-import Dep.Logger ( Logger(log) )
+import Dep.Logger (Logger (log))
 import Dep.Repository
-    ( Repository(..),
-      RunWithExistingResource(RunWithExistingResource),
-      RunWithResource(..),
-      Missing(Missing) )
+  ( Missing (Missing),
+    Repository (..),
+    RunWithExistingResource (RunWithExistingResource),
+    RunWithResource (..),
+  )
 import Prelude hiding (log)
 
 make ::
-  (MonadIO m, Has Logger m env, Ord rid) =>
+  ( MonadIO m,
+    Has Logger m env,
+    -- The component requires itself, to enable instrumentation of
+    -- self-invocations
+    Has (Repository rid resource) m env,
+    Ord rid
+  ) =>
   IORef (Map rid resource) ->
   env ->
   Repository rid resource m
@@ -47,19 +54,21 @@ make ref (Call call) = do
             liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
       withExistingResource k = do
         call log "withExistingResource"
-        z <- withResource k
-        pure $ handleMissing z
+        -- Here we use a version of withResource taken from the
+        -- dependency injection environment, which unlike the one defined
+        -- above, it might have been instrumented in the composition root
+        -- (to add new logging statements for example).
+        -- https://stackoverflow.com/questions/56614354/why-does-self-invocation-not-work-for-spring-proxies-e-g-with-aop
+        RunWithResource {runWithResource} <- call Dep.Repository.withResource k
+        pure $ RunWithExistingResource \callback ->
+          runWithResource
+            \mx -> case mx of
+              Nothing ->
+                (Error Missing, Nothing)
+              Just x ->
+                let (b, mr) = callback x
+                 in (Ok b, mr)
    in Repository
         { withResource,
           withExistingResource
         }
-  where
-    handleMissing :: MonadIO m => RunWithResource r m -> RunWithExistingResource r m
-    handleMissing RunWithResource {runWithResource} = RunWithExistingResource \callback ->
-      runWithResource
-        \mx -> case mx of
-          Nothing ->
-            (Error Missing, Nothing)
-          Just x ->
-            let (b, mr) = callback x
-             in (Ok b, mr)

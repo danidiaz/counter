@@ -51,6 +51,7 @@ import Dep.Has (Has (dep))
 import Dep.Has.Call
 import Dep.Logger
 import Dep.Logger.HandlerAware
+import Dep.Repository
 import Dep.Repository.Memory
 import GHC.Generics (Generic)
 import Network.Wai.Handler.Warp (run)
@@ -63,6 +64,7 @@ import Servant.Server
   )
 import Servant.Server.HandlerContext
 import Servant.Server.ToHandler
+import Prelude hiding (log)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -103,7 +105,12 @@ cauldron =
       _counterRepository =
         fromBare $
           alloc (newIORef Map.empty)
-            <&> \ref -> Dep.Repository.Memory.make ref,
+            <&> \ref env@(Call call) -> 
+              let repo@Repository { withResource } = Dep.Repository.Memory.make ref env
+               in repo { withResource = \rid -> do 
+                    call log "Extra log message added by instrumentation"
+                    withResource rid
+                  },
       _getCounter = fromBare $ noAlloc makeGetCounter,
       _increaseCounter = fromBare $ noAlloc makeIncreaseCounter,
       _deleteCounter = fromBare $ noAlloc makeDeleteCounter,
