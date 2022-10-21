@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnicodeSyntax #-}
 
 -- | This module connects the Servant API with the application's model.
 --
@@ -98,14 +99,14 @@ makeServantServer ::
   ) =>
   cauldron ->
   ServantServer env m
-makeServantServer (Call call) = ServantServer
+makeServantServer (Call φ) = ServantServer
   \(_ :: User) ->
     CounterCollectionAPI
       { counters = \counterId -> do
           CounterAPI
-            { increase = toHandler @X (call Model.increaseCounter) counterId,
-              query = toHandler @X (call Model.getCounter) counterId,
-              delete = toHandler @X (call Model.deleteCounter) counterId
+            { increase = toHandler @X (φ Model.increaseCounter) counterId,
+              query = toHandler @X (φ Model.getCounter) counterId,
+              delete = toHandler @X (φ Model.deleteCounter) counterId
             },
-        create = toHandler @X (call Model.createCounter)
+        create = toHandler @X (φ Model.createCounter)
       }
