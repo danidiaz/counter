@@ -85,10 +85,6 @@ module Dep.ReaderAdvice
     -- $restrict
     restrictArgs,
 
-    -- * Invocation helpers
-    -- $invocation
-    runFinalReader,
-
     -- * Advising and deceiving entire records
     -- $records
     adviseRecord,
@@ -169,7 +165,7 @@ import Data.Bifunctor (first)
 -- See "Control.Monad.Dep.Advice.Basic" for examples.
 type Advice ::
   (Type -> Constraint) ->
-  e ->
+  Type ->
   (Type -> Type) ->
   Type ->
   Type
@@ -302,7 +298,7 @@ advise (Advice f) advisee = do
 
 type Multicurryable ::
   [Type] ->
-  ((Type -> Type) -> Type) ->
+  Type ->
   (Type -> Type) ->
   Type ->
   Type ->
@@ -311,55 +307,16 @@ class Multicurryable as e m r curried | curried -> as e m r where
   type DownToBaseMonad as e m r curried :: Type
   multiuncurry :: curried -> NP I as -> ReaderT e m r
   multicurry :: (NP I as -> ReaderT e m r) -> curried
-  _runFromEnv :: m (e_ (ReaderT e m)) -> (e (ReaderT e m) -> curried) -> DownToBaseMonad as e_ m r curried
-  _askFinalDepT :: (e_ (ReaderT e m) -> m curried) -> curried
 
-instance Monad m => Multicurryable '[] e_ m r (ReaderT e_ m r) where
-  type DownToBaseMonad '[] e_ m r (ReaderT e_ m r) = m r
+instance Monad m => Multicurryable '[] e m r (ReaderT e m r) where
+  type DownToBaseMonad '[] e m r (ReaderT e m r) = m r
   multiuncurry action Nil = action
   multicurry f = f Nil
-  _runFromEnv producer extractor = do
-    e <- producer
-    runDepT (extractor e) e
-  _askFinalDepT f = do
-    env <- ask
-    r <- lift (f env)
-    r
 
 instance (Functor m, Multicurryable as e m r curried) => Multicurryable (a ': as) e m r (a -> curried) where
   type DownToBaseMonad (a ': as) e m r (a -> curried) = a -> DownToBaseMonad as e m r curried
   multiuncurry f (I a :* as) = multiuncurry @as @e @m @r @curried (f a) as
   multicurry f a = multicurry @as @e @m @r @curried (f . (:*) (I a))
-  _runFromEnv producer extractor a = _runFromEnv @as @e @m @r @curried producer (\f -> extractor f a)
-  _askFinalDepT f = 
-    let switcheroo action a = fmap ($ a) action
-     in _askFinalDepT @as @e @m @r . flip (fmap switcheroo f)
-
--- | Given a base monad @m@ action that gets hold of the 'DepT' environment, run
--- the 'DepT' transformer at the tip of a curried function.
---
--- >>> :{
---  foo :: Int -> Int -> Int -> DepT NilEnv IO ()
---  foo _ _ _ = pure ()
--- :}
---
---  >>> runFinalReader (pure NilEnv) foo 1 2 3 :: IO ()
-runFinalReader ::
-  forall as e m r curried.
-  Multicurryable as e m r curried =>
-  -- | action that gets hold of the environment
-  m e ->
-  -- | function to invoke with effects in 'DepT'
-  curried ->
-  -- | a new function with effects in the base monad
-  DownToBaseMonad as e m r curried
-runFinalReader producer extractor = _runFromEnv producer (const extractor)
-
-askFinalDepT ::
-  forall as e m r curried. 
-  Multicurryable as e m r curried =>
-  (e -> m curried) -> curried
-askFinalDepT = _askFinalDepT @as @e @m @r
 
 -- $restrict
 --
@@ -420,174 +377,84 @@ data RecordComponent
   | IWrapped
   | Recurse
 
-
-type DistributiveRecord :: Type -> (Type -> Type) -> ((Type -> Type) -> Type) -> Constraint
-class DistributiveRecord e_ m record where
-    _distribute :: (e_ (DepT e_ m) -> m (record (DepT e_ m))) -> record (DepT e_ m)
-
-type DistributiveProduct :: ((Type -> Type) -> Type) -> (Type -> Type) -> (k -> Type) -> Constraint
-class DistributiveProduct e_ m product where
-    _distributeProduct :: (e_ (DepT e_ m) -> m (product k)) -> product k
-
-instance
-  ( G.Generic (advised (DepT e_ m)),
-    G.Rep (advised (DepT e_ m)) ~ G.D1 x (G.C1 y advised_),
-    DistributiveProduct e_ m advised_,
-    Functor m
-  ) =>
-  DistributiveRecord e_ m advised
-  where
-  _distribute f =
-    let advised_ = _distributeProduct @_ @e_ @m (fmap (fmap (G.unM1 . G.unM1 . G.from)) f)
-     in G.to (G.M1 (G.M1 advised_))
-
-instance
-  ( DistributiveProduct e_ m advised_left,
-    DistributiveProduct e_ m advised_right,
-    Functor m
-  ) =>
-  DistributiveProduct e_ m (advised_left G.:*: advised_right)
-  where
-  _distributeProduct f  = 
-      _distributeProduct @_ @e_ @m (fmap (fmap (\(l G.:*: _) -> l)) f) 
-      G.:*: 
-      _distributeProduct @_ @e_ @m (fmap (fmap (\(_ G.:*: r) -> r)) f) 
-
-instance
-  ( 
-    Functor m,
-    DistributiveSubcomponent (DiscriminateDistributiveSubcomponent advised) e_ m advised
-  ) =>
-  DistributiveProduct e_ m (G.S1 ( 'G.MetaSel msymbol su ss ds) (G.Rec0 advised))
-  where
-  _distributeProduct f = G.M1 . G.K1 $ _distributeSubcomponent @(DiscriminateDistributiveSubcomponent advised) @e_ @m @advised (fmap (fmap (G.unK1 . G.unM1))  f)
-
--- Here we have dropped the polymorphic parameter in the last type argument.
-type DistributiveSubcomponent :: RecordComponent -> ((Type -> Type) -> Type) -> (Type -> Type) -> Type -> Constraint
-class DistributiveSubcomponent component_type e_ m sub where
-  _distributeSubcomponent ::  (e_ (DepT e_ m) -> m sub) -> sub
-
-
-
-instance
-  ( 
-    Functor m, 
-    Multicurryable as e_ m r advised
-  ) =>
-  DistributiveSubcomponent 'Terminal e_ m advised
-  where
-  _distributeSubcomponent f = askFinalDepT @as @e_ @m @r f
-
-instance
-  (
-  Functor m,
-  DistributiveSubcomponent (DiscriminateDistributiveSubcomponent advised) e_ m advised 
-  ) =>
-  DistributiveSubcomponent 'IWrapped e_ m (Identity advised)
-  where
-  _distributeSubcomponent f = Identity (_distributeSubcomponent @(DiscriminateDistributiveSubcomponent advised) @e_ @m (fmap (fmap runIdentity) f))
-
-instance
-  (
-  Functor m,
-  DistributiveSubcomponent (DiscriminateDistributiveSubcomponent advised) e_ m advised 
-  ) =>
-  DistributiveSubcomponent 'IWrapped e_ m (I advised)
-  where
-  _distributeSubcomponent f = I (_distributeSubcomponent @(DiscriminateDistributiveSubcomponent advised) @e_ @m (fmap (fmap unI) f))
-
-instance
-    (DistributiveRecord e_ m subrecord)
-    =>
-    DistributiveSubcomponent 'Recurse e_ m (subrecord (DepT e_ m)) where
-  _distributeSubcomponent f = _distribute @e_ @m f
-
-type DiscriminateDistributiveSubcomponent :: Type -> RecordComponent
-type family DiscriminateDistributiveSubcomponent c where
-  DiscriminateDistributiveSubcomponent (a -> b) = 'Terminal
-  DiscriminateDistributiveSubcomponent (DepT e_ m x) = 'Terminal
-  DiscriminateDistributiveSubcomponent (Identity _) = 'IWrapped
-  DiscriminateDistributiveSubcomponent (I _) = 'IWrapped
-  DiscriminateDistributiveSubcomponent _ = 'Recurse
-
 -- advising *all* fields of a record
 --
 --
-type AdvisedRecord :: (Type -> Constraint) -> ((Type -> Type) -> Type) -> (Type -> Type) -> (Type -> Constraint) -> ((Type -> Type) -> Type) -> Constraint
-class AdvisedRecord ca e_ m cr advised where
-  _adviseRecord :: [(TypeRep, String)] -> (forall r. cr r => NonEmpty (TypeRep, String) -> Advice ca e_ m r) -> advised (DepT e_ m) -> advised (DepT e_ m)
+type AdvisedRecord :: (Type -> Constraint) -> Type -> (Type -> Type) -> (Type -> Constraint) -> ((Type -> Type) -> Type) -> Constraint
+class AdvisedRecord ca e m cr advised where
+  _adviseRecord :: [(TypeRep, String)] -> (forall r. cr r => NonEmpty (TypeRep, String) -> Advice ca e m r) -> advised (ReaderT e m) -> advised (ReaderT e m)
 
-type AdvisedProduct :: (Type -> Constraint) -> ((Type -> Type) -> Type) -> (Type -> Type) -> (Type -> Constraint) -> (k -> Type) -> Constraint
-class AdvisedProduct ca e_ m cr advised_ where
-  _adviseProduct :: TypeRep -> [(TypeRep, String)] -> (forall r. cr r => NonEmpty (TypeRep, String) -> Advice ca e_ m r) -> advised_ k -> advised_ k
+type AdvisedProduct :: (Type -> Constraint) -> Type -> (Type -> Type) -> (Type -> Constraint) -> (k -> Type) -> Constraint
+class AdvisedProduct ca e m cr advised_ where
+  _adviseProduct :: TypeRep -> [(TypeRep, String)] -> (forall r. cr r => NonEmpty (TypeRep, String) -> Advice ca e m r) -> advised_ k -> advised_ k
 
 instance
-  ( G.Generic (advised (DepT e_ m)),
-    -- G.Rep (advised (DepT e_ m)) ~ G.D1 ('G.MetaData name mod p nt) (G.C1 y advised_),
-    G.Rep (advised (DepT e_ m)) ~ G.D1 x (G.C1 y advised_),
+  ( G.Generic (advised (ReaderT e m)),
+    -- G.Rep (advised (DepT e m)) ~ G.D1 ('G.MetaData name mod p nt) (G.C1 y advised_),
+    G.Rep (advised (ReaderT e m)) ~ G.D1 x (G.C1 y advised_),
     Typeable advised,
-    AdvisedProduct ca e_ m cr advised_
+    AdvisedProduct ca e m cr advised_
   ) =>
-  AdvisedRecord ca e_ m cr advised
+  AdvisedRecord ca e m cr advised
   where
   _adviseRecord acc f unadvised =
     let G.M1 (G.M1 unadvised_) = G.from unadvised
-        advised_ = _adviseProduct @_ @ca @e_ @m @cr (typeRep (Proxy @advised)) acc f unadvised_
+        advised_ = _adviseProduct @_ @ca @e @m @cr (typeRep (Proxy @advised)) acc f unadvised_
      in G.to (G.M1 (G.M1 advised_))
 
 instance
-  ( AdvisedProduct ca e_ m cr advised_left,
-    AdvisedProduct ca e_ m cr advised_right
+  ( AdvisedProduct ca e m cr advised_left,
+    AdvisedProduct ca e m cr advised_right
   ) =>
-  AdvisedProduct ca e_ m cr (advised_left G.:*: advised_right)
+  AdvisedProduct ca e m cr (advised_left G.:*: advised_right)
   where
-  _adviseProduct tr acc f (unadvised_left G.:*: unadvised_right) = _adviseProduct @_ @ca @e_ @m @cr tr acc f unadvised_left G.:*: _adviseProduct @_ @ca @e_ @m @cr tr acc f unadvised_right
+  _adviseProduct tr acc f (unadvised_left G.:*: unadvised_right) = _adviseProduct @_ @ca @e @m @cr tr acc f unadvised_left G.:*: _adviseProduct @_ @ca @e @m @cr tr acc f unadvised_right
 
 type DiscriminateAdvisedComponent :: Type -> RecordComponent
 type family DiscriminateAdvisedComponent c where
-  DiscriminateAdvisedComponent (a -> b) = 'Terminal
-  DiscriminateAdvisedComponent (DepT e_ m x) = 'Terminal
+  DiscriminateAdvisedComponent (_ -> _) = 'Terminal
+  DiscriminateAdvisedComponent (ReaderT _ _ _) = 'Terminal
   DiscriminateAdvisedComponent (Identity _) = 'IWrapped
   DiscriminateAdvisedComponent (I _) = 'IWrapped
   DiscriminateAdvisedComponent _ = 'Recurse
 
-type AdvisedComponent :: RecordComponent -> (Type -> Constraint) -> ((Type -> Type) -> Type) -> (Type -> Type) -> (Type -> Constraint) -> Type -> Constraint
-class AdvisedComponent component_type ca e_ m cr advised where
-  _adviseComponent :: [(TypeRep, String)] -> (forall r. cr r => NonEmpty (TypeRep, String) -> Advice ca e_ m r) -> advised -> advised
+type AdvisedComponent :: RecordComponent -> (Type -> Constraint) -> Type -> (Type -> Type) -> (Type -> Constraint) -> Type -> Constraint
+class AdvisedComponent component_type ca e m cr advised where
+  _adviseComponent :: [(TypeRep, String)] -> (forall r. cr r => NonEmpty (TypeRep, String) -> Advice ca e m r) -> advised -> advised
 
 instance
-  ( AdvisedComponent (DiscriminateAdvisedComponent advised) ca e_ m cr advised,
+  ( AdvisedComponent (DiscriminateAdvisedComponent advised) ca e m cr advised,
     KnownSymbol fieldName
   ) =>
-  AdvisedProduct ca e_ m cr (G.S1 ( 'G.MetaSel ( 'Just fieldName) su ss ds) (G.Rec0 advised))
+  AdvisedProduct ca e m cr (G.S1 ( 'G.MetaSel ( 'Just fieldName) su ss ds) (G.Rec0 advised))
   where
   _adviseProduct tr acc f (G.M1 (G.K1 advised)) =
     let acc' = (tr, symbolVal (Proxy @fieldName)) : acc
-     in G.M1 (G.K1 (_adviseComponent @(DiscriminateAdvisedComponent advised) @ca @e_ @m @cr acc' f advised))
+     in G.M1 (G.K1 (_adviseComponent @(DiscriminateAdvisedComponent advised) @ca @e @m @cr acc' f advised))
 
 instance
-  (Multicurryable as e_ m r advised, All ca as, cr r, Monad m) =>
-  AdvisedComponent 'Terminal ca e_ m cr advised
+  (Multicurryable as e m r advised, All ca as, cr r, Monad m) =>
+  AdvisedComponent 'Terminal ca e m cr advised
   where
-  _adviseComponent acc f advised = advise @ca @e_ @m (f (N.fromList acc)) advised
+  _adviseComponent acc f advised = advise @ca @e @m (f (N.fromList acc)) advised
 
 instance
-  AdvisedComponent (DiscriminateAdvisedComponent advised) ca e_ m cr advised =>
-  AdvisedComponent 'IWrapped ca e_ m cr (Identity advised)
+  AdvisedComponent (DiscriminateAdvisedComponent advised) ca e m cr advised =>
+  AdvisedComponent 'IWrapped ca e m cr (Identity advised)
   where
-  _adviseComponent acc f (Identity advised) = Identity (_adviseComponent @(DiscriminateAdvisedComponent advised) @ca @e_ @m @cr acc f advised)
+  _adviseComponent acc f (Identity advised) = Identity (_adviseComponent @(DiscriminateAdvisedComponent advised) @ca @e @m @cr acc f advised)
 
 instance
-  AdvisedComponent (DiscriminateAdvisedComponent advised) ca e_ m cr advised =>
-  AdvisedComponent 'IWrapped ca e_ m cr (I advised)
+  AdvisedComponent (DiscriminateAdvisedComponent advised) ca e m cr advised =>
+  AdvisedComponent 'IWrapped ca e m cr (I advised)
   where
-  _adviseComponent acc f (I advised) = I (_adviseComponent @(DiscriminateAdvisedComponent advised) @ca @e_ @m @cr acc f advised)
+  _adviseComponent acc f (I advised) = I (_adviseComponent @(DiscriminateAdvisedComponent advised) @ca @e @m @cr acc f advised)
 
 instance
-  AdvisedRecord ca e_ m cr advisable =>
-  AdvisedComponent 'Recurse ca e_ m cr (advisable (DepT e_ m))
+  AdvisedRecord ca e m cr advisable =>
+  AdvisedComponent 'Recurse ca e m cr (advisable (ReaderT e m))
   where
-  _adviseComponent acc f advised = _adviseRecord @ca @e_ @m @cr acc f advised
+  _adviseComponent acc f advised = _adviseRecord @ca @e @m @cr acc f advised
 
 
 -- | Gives 'Advice' to all the functions in a record-of-functions.
@@ -602,15 +469,15 @@ instance
 -- and the @cr@ constraint on the result type must be supplied by means of a
 -- type application. Supply 'Top' if no constraint is required.
 adviseRecord ::
-  forall ca cr e_ m advised.
-  AdvisedRecord ca e_ m cr advised =>
+  forall ca cr e m advised.
+  AdvisedRecord ca e m cr advised =>
   -- | The advice to apply.
-  (forall r . cr r => NonEmpty (TypeRep, String) -> Advice ca e_ m r) ->
+  (forall r . cr r => NonEmpty (TypeRep, String) -> Advice ca e m r) ->
   -- | The record to advise recursively.
-  advised (DepT e_ m) ->
+  advised (ReaderT e m) ->
   -- | The advised record.
-  advised (DepT e_ m)
-adviseRecord = _adviseRecord @ca @e_ @m @cr []
+  advised (ReaderT e m)
+adviseRecord = _adviseRecord @ca @e @m @cr []
 
 -- $records
 --

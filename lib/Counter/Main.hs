@@ -50,6 +50,7 @@ import Dep.Has (Has (dep))
 import Dep.Has.Call
 import Dep.Logger
 import Dep.Logger.HandlerAware
+import Dep.ReaderAdvice
 import Dep.Repository
 import Dep.Repository.Memory
 import GHC.Generics (Generic)
@@ -96,13 +97,23 @@ cauldron =
     { _logger = fromBare $ noAlloc <&> \() -> Dep.Logger.HandlerAware.make,
       _counterRepository =
         fromBare $
-          alloc (newIORef Map.empty) <&> \ref env@(Call call) ->
+          alloc (newIORef Map.empty) <&> \ref env ->
             let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
              in repo
-                  { withResource = \rid -> do
-                      call log "Extra log message added by instrumentation"
-                      withResource rid
+                  { withResource =
+                      withResource
+                        & advise (logExtraMessage env "Extra log message added by instrumentation")
                   },
+      -- A less magical (compared to the Advice method above) way of adding the
+      -- extra log message. Perhaps it should be preferred, but the problem is
+      -- that it forces you to explicitly pass down the positional arguments of
+      -- every function, which might get annoying when instrumenting lots of
+      -- functions.
+      --
+      --          { withResource = \rid -> do
+      --              call log "Extra log message added by instrumentation"
+      --              withResource rid
+      --          },
       _getCounter = fromBare $ noAlloc <&> \() -> makeGetCounter,
       _increaseCounter = fromBare $ noAlloc <&> \() -> makeIncreaseCounter,
       _deleteCounter = fromBare $ noAlloc <&> \() -> makeDeleteCounter,
@@ -126,6 +137,10 @@ cauldron =
     alloc = liftIO
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
+    logExtraMessage :: Cauldron Identity M' -> String -> forall r. Advice Top Env IO r
+    logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
+      φ log message
+      action
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
