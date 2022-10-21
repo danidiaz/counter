@@ -13,7 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE UnicodeSyntax #-}
 
 -- | A repository implementation that uses an in-memory map.
 module Dep.Repository.Memory (make) where
@@ -46,20 +46,20 @@ make ::
   IORef (Map rid resource) ->
   env ->
   Repository rid resource m
-make ref (Call call) = do
+make ref (Call φ) = do
   let withResource k = do
-        call log "withResource"
+        φ log "withResource"
         pure $
           RunWithResource \callback -> do
             liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
       withExistingResource k = do
-        call log "withExistingResource"
+        φ log "withExistingResource"
         -- Here we use a version of withResource taken from the
         -- dependency injection environment, which unlike the one defined
         -- above, it might have been instrumented in the composition root
         -- (to add new logging statements for example).
         -- https://stackoverflow.com/questions/56614354/why-does-self-invocation-not-work-for-spring-proxies-e-g-with-aop
-        RunWithResource {runWithResource} <- call Dep.Repository.withResource k
+        RunWithResource {runWithResource} <- φ Dep.Repository.withResource k
         pure $ RunWithExistingResource \callback ->
           runWithResource
             \mx -> case mx of
