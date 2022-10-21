@@ -88,10 +88,10 @@ type Allocator = ContT () IO
 type Phases m = Allocator `Compose` Constructor (Cauldron Identity m)
 
 -- Monad used by the model.
-type M' :: Type -> Type
-type M' = ReaderT Env IO
+type M :: Type -> Type
+type M = ReaderT Env IO
 
-cauldron :: Cauldron (Phases M') M'
+cauldron :: Cauldron (Phases M) M
 cauldron =
   Cauldron
     { _logger = fromBare $ noAlloc <&> \() -> Dep.Logger.HandlerAware.make,
@@ -137,7 +137,7 @@ cauldron =
     alloc = liftIO
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
-    logExtraMessage :: Cauldron Identity M' -> String -> forall r. Advice Top Env IO r
+    logExtraMessage :: Cauldron Identity M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log message
       action
@@ -162,7 +162,7 @@ main = do
   -- We run the allocation phase of the DI context
   runContT (pullPhase cauldron) \allocated -> do
     -- We run the wiring phase of the DI context
-    let wired :: Cauldron Identity M' = fixEnv allocated
+    let wired :: Cauldron Identity M = fixEnv allocated
         -- We extract the server from the DI context.
         ServantRunner {runServer} = dep wired
     runServer
