@@ -2,6 +2,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -26,6 +27,8 @@ module Counter.Server (
   makeServerEnv,
   authCheck,
   basicAuthServerContext,
+  ServantServer(..),
+  makeServantServer
 ) where
 
 import Counter.API
@@ -38,17 +41,27 @@ import Data.Functor
 import GHC.Generics
 import GHC.Records
 import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
+import Dep.Has
+import Dep.Has.Call
+import Data.Kind
 import Servant.Server
-  ( BasicAuthCheck (BasicAuthCheck),
-    BasicAuthResult (Authorized, Unauthorized),
-    Context (..),
-    err404,
-    err500,
-  )
+    ( Application,
+      BasicAuthCheck,
+      Handler,
+      HasServer(ServerT, hoistServerWithContext),
+      serveWithContext,
+      BasicAuthCheck(BasicAuthCheck),
+      BasicAuthResult(Authorized, Unauthorized),
+      Context(..),
+      err404,
+      err500 )
+import Servant.Server.HandlerContext
+import Servant.Server.ToHandler
 import Servant.Server.HandlerContext
     ( HandlerContext, HasHandlerContext(..) )
 import Servant.Server.ToHandler
     ( FromDTO(..), ToDTO(..), ToServerError(..) )
+import Control.Monad.Reader
 
 
 -- | This is a marker type to identify the servant API.
@@ -102,7 +115,7 @@ makeServerEnv :: IO Env
 makeServerEnv = do
   pure
     Env
-      { 
+      {
         -- This starts empty, because the handler context is (optially) set by
         -- "addHandlerContext".
         _handlerContext = []
@@ -121,3 +134,40 @@ authCheck =
 
 basicAuthServerContext :: Context (BasicAuthCheck User ': '[])
 basicAuthServerContext = authCheck :. EmptyContext
+
+-- | The type parameters here are a bit weird compared to other components.
+--
+-- @m@ is not really used as the server monad.
+--
+-- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
+-- instances require a 'ReaderT' monad to work.
+type ServantServer :: Type -> (Type -> Type) -> Type
+newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env Handler)}
+
+
+-- | We construct a Servant server by extracting components from the dependency
+-- injection context and using them as handlers.
+--
+-- We need to massage the components a little because they know nothing of
+-- Servant: we need to change the monad, convert model errros to
+-- 'ServantError's, convert API DTOs to and from model datatypes...
+makeServantServer ::
+  ( m ~ ReaderT env IO,
+    Has GetCounter m cauldron,
+    Has IncreaseCounter m cauldron,
+    Has DeleteCounter m cauldron,
+    Has CreateCounter m cauldron
+  ) =>
+  cauldron ->
+  ServantServer env m
+makeServantServer (Call call) = ServantServer
+  \(_ :: User) ->
+    CounterCollectionAPI
+      { counters = \counterId -> do
+          CounterAPI
+            { increase = toHandler @X (call Model.increaseCounter) counterId,
+              query = toHandler @X (call Model.getCounter) counterId,
+              delete = toHandler @X (call Model.deleteCounter) counterId
+            },
+        create = toHandler @X (call Model.createCounter)
+      }

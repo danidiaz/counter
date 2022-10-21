@@ -57,14 +57,13 @@ import GHC.Generics (Generic)
 import Network.Wai.Handler.Warp (run)
 import Servant.Server
   ( Application,
-    BasicAuthCheck,
     Handler,
-    HasServer (ServerT, hoistServerWithContext),
+    HasServer (hoistServerWithContext),
     serveWithContext,
+      BasicAuthCheck
   )
-import Servant.Server.HandlerContext
-import Servant.Server.ToHandler
 import Prelude hiding (log)
+import Servant.Server.HandlerContext
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -139,42 +138,6 @@ deriving via Autowired (Cauldron Identity m) instance Autowireable r_ m (Cauldro
 -- Monad used by the Servant server.
 type M :: Type -> Type
 type M = ReaderT Env Handler
-
--- | The type parameters here are a bit weird compared to other components.
---
--- @m@ is not really used as the server monad.
---
--- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
--- instances require a 'ReaderT' monad to work.
-type ServantServer :: Type -> (Type -> Type) -> Type
-newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env Handler)}
-
--- | We construct a Servant server by extracting components from the dependency
--- injection context and using them as handlers.
---
--- We need to massage the components a little because they know nothing of
--- Servant: we need to change the monad, convert model errros to
--- 'ServantError's, convert API DTOs to and from model datatypes...
-makeServantServer ::
-  ( m ~ ReaderT env IO,
-    Has GetCounter m cauldron,
-    Has IncreaseCounter m cauldron,
-    Has DeleteCounter m cauldron,
-    Has CreateCounter m cauldron
-  ) =>
-  cauldron ->
-  ServantServer env m
-makeServantServer (Call call) = ServantServer
-  \(_ :: User) ->
-    CounterCollectionAPI
-      { counters = \counterId -> do
-          CounterAPI
-            { increase = toHandler @X (call Model.increaseCounter) counterId,
-              query = toHandler @X (call Model.getCounter) counterId,
-              delete = toHandler @X (call Model.deleteCounter) counterId
-            },
-        create = toHandler @X (call Model.createCounter)
-      }
 
 main :: IO ()
 main = do
