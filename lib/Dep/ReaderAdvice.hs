@@ -87,9 +87,7 @@ module Dep.ReaderAdvice
 
     -- * Invocation helpers
     -- $invocation
-    runFinalDepT,
-    runFromEnv,
-    runFromDep,
+    runFinalReader,
 
     -- * Advising and deceiving entire records
     -- $records
@@ -109,7 +107,6 @@ where
 
 import Dep.Has
 import Dep.Env
-import Control.Monad.Dep
 import Control.Monad.Trans.Reader (ReaderT (..), withReaderT)
 import Data.Functor.Identity
 import Data.Kind
@@ -172,19 +169,19 @@ import Data.Bifunctor (first)
 -- See "Control.Monad.Dep.Advice.Basic" for examples.
 type Advice ::
   (Type -> Constraint) ->
-  ((Type -> Type) -> Type) ->
+  e ->
   (Type -> Type) ->
   Type ->
   Type
-data Advice (ca :: Type -> Constraint) (e_ :: (Type -> Type) -> Type) m r where
+data Advice (ca :: Type -> Constraint) e m r where
   Advice ::
-    forall ca e_ m r.
+    forall ca e m r.
     ( forall as.
       All ca as =>
       NP I as ->
-      DepT e_ m (DepT e_ m r -> DepT e_ m r, NP I as)
+      ReaderT e m (ReaderT e m r -> ReaderT e m r, NP I as)
     ) ->
-    Advice ca e_ m r
+    Advice ca e m r
 
 -- |
 --    'Advice's compose \"sequentially\" when tweaking the arguments, and
@@ -192,13 +189,13 @@ data Advice (ca :: Type -> Constraint) (e_ :: (Type -> Type) -> Type) m r where
 --
 --    The first 'Advice' is the \"outer\" one. It tweaks the function arguments
 --    first, and wraps around the execution of the second, \"inner\" 'Advice'.
-instance Monad m => Semigroup (Advice ca e_ m r) where
+instance Monad m => Semigroup (Advice ca e m r) where
   Advice outer <> Advice inner = Advice \args -> do
     (tweakOuter, argsOuter) <- outer args
     (tweakInner, argsInner) <- inner argsOuter
     pure (tweakOuter . tweakInner, argsInner)
 
-instance Monad m => Monoid (Advice ca e_ m r) where
+instance Monad m => Monoid (Advice ca e m r) where
   mappend = (<>)
   mempty = Advice \args -> pure (id, args)
 
@@ -219,14 +216,14 @@ instance Monad m => Monoid (Advice ca e_ m r) where
 --
 --
 makeAdvice ::
-  forall ca e_ m r.
+  forall ca e m r.
   -- | The function that tweaks the arguments and the execution.
   ( forall as.
     All ca as =>
     NP I as ->
-    DepT e_ m (DepT e_ m r -> DepT e_ m r, NP I as)
+    ReaderT e m (ReaderT e m r -> ReaderT e m r, NP I as)
   ) ->
-  Advice ca e_ m r
+  Advice ca e m r
 makeAdvice = Advice
 
 -- |
@@ -237,15 +234,15 @@ makeAdvice = Advice
 --  doesNothing = makeArgsAdvice pure
 -- :}
 makeArgsAdvice ::
-  forall ca e_ m r.
+  forall ca e m r.
   Monad m =>
   -- | The function that tweaks the arguments.
   ( forall as.
     All ca as =>
     NP I as ->
-    DepT e_ m (NP I as)
+    ReaderT e m (NP I as)
   ) ->
-  Advice ca e_ m r
+  Advice ca e m r
 makeArgsAdvice tweakArgs =
   makeAdvice $ \args -> do
     args' <- tweakArgs args
@@ -259,13 +256,13 @@ makeArgsAdvice tweakArgs =
 --  doesNothing = makeExecutionAdvice id
 -- :}
 makeExecutionAdvice ::
-  forall ca e_ m r.
+  forall ca e m r.
   Applicative m =>
   -- | The function that tweaks the execution.
-  ( DepT e_ m r ->
-    DepT e_ m r
+  ( ReaderT e m r ->
+    ReaderT e m r
   ) ->
-  Advice ca e_ m r
+  Advice ca e m r
 makeExecutionAdvice tweakExecution = makeAdvice \args -> pure (tweakExecution, args)
 
 data Pair a b = Pair !a !b
@@ -289,19 +286,19 @@ data Pair a b = Pair !a !b
 --  advisedBar2 = advise @Top (fromSimple \_ -> returnMempty) bar
 -- :}
 advise ::
-  forall ca e_ m r as advisee.
-  (Multicurryable as e_ m r advisee, All ca as, Monad m) =>
+  forall ca e m r as advisee.
+  (Multicurryable as e m r advisee, All ca as, Monad m) =>
   -- | The advice to apply.
-  Advice ca e_ m r ->
+  Advice ca e m r ->
   -- | A function to be adviced.
   advisee ->
   advisee
 advise (Advice f) advisee = do
-  let uncurried = multiuncurry @as @e_ @m @r advisee
+  let uncurried = multiuncurry @as @e @m @r advisee
       uncurried' args = do
         (tweakExecution, args') <- f args
         tweakExecution (uncurried args')
-   in multicurry @as @e_ @m @r uncurried'
+   in multicurry @as @e @m @r uncurried'
 
 type Multicurryable ::
   [Type] ->
@@ -310,15 +307,15 @@ type Multicurryable ::
   Type ->
   Type ->
   Constraint
-class Multicurryable as e_ m r curried | curried -> as e_ m r where
-  type DownToBaseMonad as e_ m r curried :: Type
-  multiuncurry :: curried -> NP I as -> DepT e_ m r
-  multicurry :: (NP I as -> DepT e_ m r) -> curried
-  _runFromEnv :: m (e_ (DepT e_ m)) -> (e_ (DepT e_ m) -> curried) -> DownToBaseMonad as e_ m r curried
-  _askFinalDepT :: (e_ (DepT e_ m) -> m curried) -> curried
+class Multicurryable as e m r curried | curried -> as e m r where
+  type DownToBaseMonad as e m r curried :: Type
+  multiuncurry :: curried -> NP I as -> ReaderT e m r
+  multicurry :: (NP I as -> ReaderT e m r) -> curried
+  _runFromEnv :: m (e_ (ReaderT e m)) -> (e (ReaderT e m) -> curried) -> DownToBaseMonad as e_ m r curried
+  _askFinalDepT :: (e_ (ReaderT e m) -> m curried) -> curried
 
-instance Monad m => Multicurryable '[] e_ m r (DepT e_ m r) where
-  type DownToBaseMonad '[] e_ m r (DepT e_ m r) = m r
+instance Monad m => Multicurryable '[] e_ m r (ReaderT e_ m r) where
+  type DownToBaseMonad '[] e_ m r (ReaderT e_ m r) = m r
   multiuncurry action Nil = action
   multicurry f = f Nil
   _runFromEnv producer extractor = do
@@ -329,14 +326,14 @@ instance Monad m => Multicurryable '[] e_ m r (DepT e_ m r) where
     r <- lift (f env)
     r
 
-instance (Functor m, Multicurryable as e_ m r curried) => Multicurryable (a ': as) e_ m r (a -> curried) where
-  type DownToBaseMonad (a ': as) e_ m r (a -> curried) = a -> DownToBaseMonad as e_ m r curried
-  multiuncurry f (I a :* as) = multiuncurry @as @e_ @m @r @curried (f a) as
-  multicurry f a = multicurry @as @e_ @m @r @curried (f . (:*) (I a))
-  _runFromEnv producer extractor a = _runFromEnv @as @e_ @m @r @curried producer (\f -> extractor f a)
+instance (Functor m, Multicurryable as e m r curried) => Multicurryable (a ': as) e m r (a -> curried) where
+  type DownToBaseMonad (a ': as) e m r (a -> curried) = a -> DownToBaseMonad as e m r curried
+  multiuncurry f (I a :* as) = multiuncurry @as @e @m @r @curried (f a) as
+  multicurry f a = multicurry @as @e @m @r @curried (f . (:*) (I a))
+  _runFromEnv producer extractor a = _runFromEnv @as @e @m @r @curried producer (\f -> extractor f a)
   _askFinalDepT f = 
     let switcheroo action a = fmap ($ a) action
-     in _askFinalDepT @as @e_ @m @r . flip (fmap switcheroo f)
+     in _askFinalDepT @as @e @m @r . flip (fmap switcheroo f)
 
 -- | Given a base monad @m@ action that gets hold of the 'DepT' environment, run
 -- the 'DepT' transformer at the tip of a curried function.
@@ -346,75 +343,23 @@ instance (Functor m, Multicurryable as e_ m r curried) => Multicurryable (a ': a
 --  foo _ _ _ = pure ()
 -- :}
 --
---  >>> runFinalDepT (pure NilEnv) foo 1 2 3 :: IO ()
-runFinalDepT ::
-  forall as e_ m r curried.
-  Multicurryable as e_ m r curried =>
+--  >>> runFinalReader (pure NilEnv) foo 1 2 3 :: IO ()
+runFinalReader ::
+  forall as e m r curried.
+  Multicurryable as e m r curried =>
   -- | action that gets hold of the environment
-  m (e_ (DepT e_ m)) ->
+  m e ->
   -- | function to invoke with effects in 'DepT'
   curried ->
   -- | a new function with effects in the base monad
-  DownToBaseMonad as e_ m r curried
-runFinalDepT producer extractor = _runFromEnv producer (const extractor)
+  DownToBaseMonad as e m r curried
+runFinalReader producer extractor = _runFromEnv producer (const extractor)
 
 askFinalDepT ::
-  forall as e_ m r curried. 
-  Multicurryable as e_ m r curried =>
-  (e_ (DepT e_ m) -> m curried) -> curried
-askFinalDepT = _askFinalDepT @as @e_ @m @r
-
--- | Given a base monad @m@ action that gets hold of the 'DepT' environment,
--- and a function capable of extracting a curried function from the
--- environment, run the 'DepT' transformer at the tip of the resulting curried
--- function.
---
--- Why put the environment behind the @m@ action? Well, since getting to the
--- end of the curried function takes some work, it's a good idea to have some
--- flexibility once we arrive there. For example, the environment could be
--- stored in a "Data.IORef" and change in response to events, perhaps with
--- advices being added or removed.
---
--- >>> :{
---   type MutableEnv :: (Type -> Type) -> Type
---   data MutableEnv m = MutableEnv { _foo :: Int -> m (Sum Int) }
---   :}
---
--- >>> :{
---   do envRef <- newIORef (MutableEnv (pure . Sum))
---      let foo' = runFromEnv (readIORef envRef) _foo
---      do r <- foo' 7
---         print r
---      modifyIORef envRef (\e -> e { _foo = advise @Top (fromSimple \_ -> returnMempty) (_foo e) })
---      do r <- foo' 7
---         print r
--- :}
--- Sum {getSum = 7}
--- Sum {getSum = 0}
-runFromEnv ::
-  forall as e_ m r curried.
-  Multicurryable as e_ m r curried =>
-  -- | action that gets hold of the environment
-  m (e_ (DepT e_ m)) ->
-  -- | gets a function from the environment with effects in 'DepT'
-  (e_ (DepT e_ m) -> curried) ->
-  -- | a new function with effects in the base monad
-  DownToBaseMonad as e_ m r curried
-runFromEnv = _runFromEnv
-
--- | Like 'runFromEnv', but the function to run is extracted from a dependency
--- @dep@ which is found using 'Has'. The selector should be concrete enough to
--- identify @dep@ in the environment.
-runFromDep ::
-  forall dep as e_ m r curried.
-  (Multicurryable as e_ m r curried, Has dep (DepT e_ m) (e_ (DepT e_ m))) =>
-  -- | action that gets hold of the environment
-  m (e_ (DepT e_ m)) ->
-  -- | selector that gets a function from a dependency found using 'Has'
-  (dep (DepT e_ m) -> curried) ->
-  -- | a new function with effects in the base monad
-  DownToBaseMonad as e_ m r curried
-runFromDep envAction member = _runFromEnv envAction (member . dep)
+  forall as e m r curried. 
+  Multicurryable as e m r curried =>
+  (e -> m curried) -> curried
+askFinalDepT = _askFinalDepT @as @e @m @r
 
 -- $restrict
 --
@@ -446,13 +391,13 @@ runFromDep envAction member = _runFromEnv envAction (member . dep)
 
 -- | Makes the constraint on the arguments more restrictive.
 restrictArgs ::
-  forall more less e_ m r.
+  forall more less e m r.
   -- | Evidence that one constraint implies the other. Every @x@ that has a @more@ instance also has a @less@ instance.
   (forall x. Dict more x -> Dict less x) ->
   -- | Advice with less restrictive constraint on the args.
-  Advice less e_ m r ->
+  Advice less e m r ->
   -- | Advice with more restrictive constraint on the args.
-  Advice more e_ m r
+  Advice more e m r
 -- about the order of the type parameters... which is more useful?
 -- A possible principle to follow:
 -- We are likely to know the "less" constraint, because advices are likely to
@@ -462,7 +407,7 @@ restrictArgs ::
 -- on the fly, while constructing a record, without a top-level binding with a
 -- type signature.  This seems to favor putting "more" first.
 restrictArgs evidence (Advice advice) = Advice \args ->
-    let advice' :: forall as. All more as => NP I as -> DepT e_ m (DepT e_ m r -> DepT e_ m r, NP I as)
+    let advice' :: forall as. All more as => NP I as -> ReaderT e m (ReaderT e m r -> ReaderT e m r, NP I as)
         advice' args' =
             case Data.SOP.Dict.mapAll @more @less evidence of
                f -> case f (Dict @(All more) @as) of
@@ -476,8 +421,7 @@ data RecordComponent
   | Recurse
 
 
-
-type DistributiveRecord :: ((Type -> Type) -> Type) -> (Type -> Type) -> ((Type -> Type) -> Type) -> Constraint
+type DistributiveRecord :: Type -> (Type -> Type) -> ((Type -> Type) -> Type) -> Constraint
 class DistributiveRecord e_ m record where
     _distribute :: (e_ (DepT e_ m) -> m (record (DepT e_ m))) -> record (DepT e_ m)
 
