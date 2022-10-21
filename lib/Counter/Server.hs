@@ -1,7 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -9,7 +8,6 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,11 +20,6 @@
 --
 -- In particular, it defines some instances that help map datatypes to and fro. 
 module Counter.Server (
-  X(X),
-  Env(..),
-  makeServerEnv,
-  authCheck,
-  basicAuthServerContext,
   ServantServer(..),
   makeServantServer
 ) where
@@ -36,40 +29,22 @@ import Counter.API qualified as API
 import Counter.Model
 import Counter.Model qualified as Model
 import Data.Coerce
-import Data.Function
-import Data.Functor
-import GHC.Generics
-import GHC.Records
-import Servant.API.BasicAuth (BasicAuthData (BasicAuthData))
 import Dep.Has
 import Dep.Has.Call
 import Data.Kind
 import Servant.Server
-    ( Application,
-      BasicAuthCheck,
-      Handler,
-      HasServer(ServerT, hoistServerWithContext),
-      serveWithContext,
-      BasicAuthCheck(BasicAuthCheck),
-      BasicAuthResult(Authorized, Unauthorized),
-      Context(..),
+    ( Handler,
+      HasServer(ServerT),
       err404,
       err500 )
-import Servant.Server.HandlerContext
 import Servant.Server.ToHandler
-import Servant.Server.HandlerContext
-    ( HandlerContext, HasHandlerContext(..) )
-import Servant.Server.ToHandler
-    ( FromDTO(..), ToDTO(..), ToServerError(..) )
 import Control.Monad.Reader
-
 
 -- | This is a marker type to identify the servant API.
 -- 
 -- In theory, a model could be used to serve different API's, so to avoid
 -- instance collisions we parameterize many helper typeclasses by 'X'.
-data X = X
-
+data X
 
 -- | Maps a domain-relevant error to 'ServerError'.
 instance ToServerError X Model.Missing where
@@ -99,42 +74,6 @@ instance ToDTO X API.Counter Model.Counter where
 instance ToDTO X () () where
   toDTO = id
 
-
--- | This is the 'ReaderT' environment in which the handlers run.
-newtype Env = Env
-  { _handlerContext :: HandlerContext
-  }
-  deriving (Generic)
-
-instance HasHandlerContext Env where
-  handlerContext f s =
-    -- Artisanal lens.
-    getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
-
-makeServerEnv :: IO Env
-makeServerEnv = do
-  pure
-    Env
-      {
-        -- This starts empty, because the handler context is (optially) set by
-        -- "addHandlerContext".
-        _handlerContext = []
-      }
-
---
--- AUTHENTICATION
--- https://docs.servant.dev/en/stable/tutorial/Authentication.html#
-authCheck :: BasicAuthCheck User
-authCheck =
-  let check (BasicAuthData username password) =
-        if username == "user" && password == "password"
-          then return (Authorized (User "user"))
-          else return Unauthorized
-   in BasicAuthCheck check
-
-basicAuthServerContext :: Context (BasicAuthCheck User ': '[])
-basicAuthServerContext = authCheck :. EmptyContext
-
 -- | The type parameters here are a bit weird compared to other components.
 --
 -- @m@ is not really used as the server monad.
@@ -143,7 +82,6 @@ basicAuthServerContext = authCheck :. EmptyContext
 -- instances require a 'ReaderT' monad to work.
 type ServantServer :: Type -> (Type -> Type) -> Type
 newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env Handler)}
-
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.

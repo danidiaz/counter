@@ -29,6 +29,7 @@ library lib-counter
     exposed-modules:  Counter.Main
                       Counter.API
                       Counter.Server
+                      Counter.Runner
                       Counter.Model
                       Data.Result
                       Servant.Server.ToHandler

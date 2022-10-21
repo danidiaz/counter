@@ -19,22 +19,21 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Counter.Main where
 
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Cont
-import Counter.API
 import Counter.Model
 import Counter.Model qualified as Model
+import Counter.Runner
 import Counter.Server
+import Data.Function ((&))
 import Data.Functor
 import Data.IORef
 import Data.Kind (Type)
 import Data.Map.Strict as Map (empty)
-import Data.Proxy
 import Dep.Env
   ( Autowireable,
     Autowired (..),
@@ -54,16 +53,9 @@ import Dep.Logger.HandlerAware
 import Dep.Repository
 import Dep.Repository.Memory
 import GHC.Generics (Generic)
-import Network.Wai.Handler.Warp (run)
-import Servant.Server
-  ( Application,
-    Handler,
-    HasServer (hoistServerWithContext),
-    serveWithContext,
-      BasicAuthCheck
-  )
-import Prelude hiding (log)
+import GHC.Records
 import Servant.Server.HandlerContext
+import Prelude hiding (log)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -78,7 +70,8 @@ data Cauldron phase m = Cauldron
     _increaseCounter :: phase (IncreaseCounter m),
     _deleteCounter :: phase (DeleteCounter m),
     _createCounter :: phase (CreateCounter m),
-    _server :: phase (ServantServer Env m)
+    _server :: phase (ServantServer Env m),
+    _runner :: phase (ServantRunner Env m)
   }
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
@@ -123,7 +116,10 @@ cauldron =
         fromBare $
           noAlloc <&> \() env ->
             let servantServer@(ServantServer {server}) = makeServantServer env
-             in servantServer {server = addHandlerContext [] server}
+             in servantServer {server = addHandlerContext [] server},
+      _runner =
+        fromBare $
+          noAlloc <&> \() -> makeServantRunner
     }
   where
     alloc :: IO a -> ContT () IO a
@@ -135,9 +131,16 @@ cauldron =
 -- DI context.
 deriving via Autowired (Cauldron Identity m) instance Autowireable r_ m (Cauldron Identity m) => Has r_ m (Cauldron Identity m)
 
--- Monad used by the Servant server.
-type M :: Type -> Type
-type M = ReaderT Env Handler
+-- | This is the 'ReaderT' environment in which the handlers run.
+newtype Env = Env
+  { _handlerContext :: HandlerContext
+  }
+  deriving (Generic)
+
+instance HasHandlerContext Env where
+  handlerContext f s =
+    -- Artisanal lens.
+    getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
 main :: IO ()
 main = do
@@ -146,15 +149,10 @@ main = do
     -- We run the wiring phase of the DI context
     let wired :: Cauldron Identity M' = fixEnv allocated
         -- We extract the server from the DI context.
-        ServantServer {server} = dep wired
-    env <- makeServerEnv
-    -- https://docs.servant.dev/en/stable/cookbook/hoist-server-with-context/HoistServerWithContext.html
-    let hoistedServer =
-          hoistServerWithContext
-            (Proxy @API)
-            (Proxy @'[BasicAuthCheck User])
-            (`runReaderT` env)
-            server
-        app :: Application
-        app = serveWithContext (Proxy @API) basicAuthServerContext hoistedServer
-    run 8000 app
+        ServantRunner {runServer} = dep wired
+    runServer
+      Env
+        { -- This starts empty, because the handler context is (optially) set by
+          -- "addHandlerContext".
+          _handlerContext = []
+        }
