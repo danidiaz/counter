@@ -63,13 +63,13 @@ authCheck =
 basicAuthServerContext :: Context (BasicAuthCheck User ': '[])
 basicAuthServerContext = authCheck :. EmptyContext
 
-type ServantRunner :: Type -> (Type -> Type) -> Type
-newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
-
 newtype Conf = Conf { 
         port :: Int
     } deriving stock (Show, Generic)
       deriving anyclass FromJSON
+
+type ServantRunner :: Type -> (Type -> Type) -> Type
+newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 
 makeServantRunner ::
   ( m ~ ReaderT renv IO,
