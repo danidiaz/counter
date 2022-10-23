@@ -100,10 +100,10 @@ cauldron =
           alloc (newIORef Map.empty) <&> \ref env ->
             let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
              in repo
-                  { withResource = -- Here we instrument a single method
-                      withResource
+                  { withResource =
+                      withResource -- Here we instrument a single method
                         & advise (logExtraMessage env "Extra log message added by instrumentation")
-                  } 
+                  }
                   -- Here we add additional instrumentation for all the methods in the component.
                   & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods."),
       -- A less magical (compared to the Advice method above) way of adding the
