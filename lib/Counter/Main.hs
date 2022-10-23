@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -44,7 +45,7 @@ import Dep.Env
     Phased,
     fixEnv,
     fromBare,
-    pullPhase,
+    pullPhase, mapPhaseWithFieldNames, DemotableFieldNames,
   )
 import Dep.Has (Has (dep))
 import Dep.Has.Call
@@ -57,6 +58,11 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
+import Data.Yaml
+import Data.Aeson qualified as A
+import Data.Aeson.Types qualified as A
+import Control.Arrow (Kleisli(..))
+import Data.String(fromString)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -75,7 +81,12 @@ data Cauldron phase m = Cauldron
     _runner :: phase (ServantRunner Env m)
   }
   deriving stock (Generic)
-  deriving anyclass (FieldsFindableByType, Phased)
+  deriving anyclass (FieldsFindableByType, DemotableFieldNames, Phased)
+
+type Configurator = Kleisli Parser Value 
+
+parseConf :: FromJSON a => Configurator a
+parseConf = Kleisli parseJSON
 
 -- | An allocation phase in which components allocate some resource that they'll
 -- use during operation.
@@ -85,7 +96,7 @@ type Allocator = ContT () IO
 
 -- | We have an allocation phase followed by a "wiring" phase in which we tie
 -- the knot to obtain the fully constructed DI context.
-type Phases m = Allocator `Compose` Constructor (Cauldron Identity m)
+type Phases m = Configurator `Compose` Allocator `Compose` Constructor (Cauldron Identity m)
 
 -- Monad used by the model.
 type M :: Type -> Type
@@ -94,10 +105,10 @@ type M = ReaderT Env IO
 cauldron :: Cauldron (Phases M) M
 cauldron =
   Cauldron
-    { _logger = fromBare $ noAlloc <&> \() -> Dep.Logger.HandlerAware.make,
+    { _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> Dep.Logger.HandlerAware.make,
       _counterRepository =
         fromBare $
-          alloc (newIORef Map.empty) <&> \ref env ->
+          noConf <&> \() -> alloc (newIORef Map.empty) <&> \ref env ->
             let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
              in repo
                   { withResource =
@@ -116,10 +127,10 @@ cauldron =
       --              call log "Extra log message added by instrumentation"
       --              withResource rid
       --          },
-      _getCounter = fromBare $ noAlloc <&> \() -> makeGetCounter,
-      _increaseCounter = fromBare $ noAlloc <&> \() -> makeIncreaseCounter,
-      _deleteCounter = fromBare $ noAlloc <&> \() -> makeDeleteCounter,
-      _createCounter = fromBare $ noAlloc <&> \() -> makeCreateCounter,
+      _getCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeGetCounter,
+      _increaseCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeIncreaseCounter,
+      _deleteCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeDeleteCounter,
+      _createCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeCreateCounter,
       _server =
         -- Is this the best place to call 'addHandlerContext'?  It could be done
         -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
@@ -127,14 +138,16 @@ cauldron =
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
         fromBare $
-          noAlloc <&> \() env ->
+          noConf <&> \() -> noAlloc <&> \() env ->
             let servantServer@(ServantServer {server}) = makeServantServer env
              in servantServer {server = addHandlerContext [] server},
       _runner =
         fromBare $
-          noAlloc <&> \() -> makeServantRunner
+          parseConf <&> \conf -> noAlloc <&> \() -> makeServantRunner conf
     }
   where
+    noConf :: Configurator ()
+    noConf = pure ()
     alloc :: IO a -> ContT () IO a
     alloc = liftIO
     noAlloc :: ContT () IO ()
@@ -161,15 +174,28 @@ instance HasHandlerContext Env where
 
 main :: IO ()
 main = do
-  -- We run the allocation phase of the DI context
-  runContT (pullPhase cauldron) \allocated -> do
-    -- We run the wiring phase of the DI context
-    let wired :: Cauldron Identity M = fixEnv allocated
-        -- We extract the server from the DI context.
-        ServantRunner {runServer} = dep wired
-    runServer
-      Env
-        { -- This starts empty, because the handler context is (optially) set by
-          -- "addHandlerContext".
-          _handlerContext = []
-        }
+  -- CONFIGURATION PHASE
+  let Kleisli (A.withObject "configuration" -> parser) = 
+          cauldron 
+          -- Make the parsers which parse the conf of each component search for
+          -- that conf in the global configuration, using the field name of the
+          -- component in the composition root.
+        & mapPhaseWithFieldNames 
+            (\fieldName (Kleisli f) -> Kleisli \o -> A.explicitParseField f o (fromString fieldName)) 
+        & pullPhase @(Kleisli Parser Object) 
+  Right confValue <- decodeFileEither @A.Value "conf.yaml"
+  case parseEither parser confValue of
+    Left err -> print err
+    Right allocators -> do
+      -- ALLOCATION PHASE
+      runContT (pullPhase allocators) \constructors -> do
+        -- WIRING PHASE
+        let wired :: Cauldron Identity M = fixEnv constructors
+        -- RUNNNING THE APP
+        let ServantRunner {runServer} = dep wired
+        runServer
+          Env
+            { -- This starts empty, because the handler context is (optially) set by
+              -- "addHandlerContext".
+              _handlerContext = []
+            }

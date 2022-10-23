@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -16,6 +17,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 -- | This module connects the Servant API with the application's model.
 --
@@ -43,6 +46,8 @@ import Network.Wai.Handler.Warp (run)
 import Dep.Has
 import Control.Monad.Reader
 import Data.Proxy
+import Data.Aeson
+import GHC.Generics (Generic)
 
 --
 -- AUTHENTICATION
@@ -61,13 +66,19 @@ basicAuthServerContext = authCheck :. EmptyContext
 type ServantRunner :: Type -> (Type -> Type) -> Type
 newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 
+newtype Conf = Conf { 
+        port :: Int
+    } deriving stock (Show, Generic)
+      deriving anyclass FromJSON
+
 makeServantRunner ::
   ( m ~ ReaderT renv IO,
     Has (ServantServer renv) m env
   ) =>
+  Conf ->
   env -> 
   ServantRunner renv m
-makeServantRunner env = ServantRunner {
+makeServantRunner Conf {port} env = ServantRunner {
     runServer = \renv ->
         let ServantServer {server} = dep env
             hoistedServer =
@@ -78,5 +89,5 @@ makeServantRunner env = ServantRunner {
                     server
             app :: Application
             app = serveWithContext (Proxy @API) basicAuthServerContext hoistedServer
-         in run 8000 app
+         in run port app
     }
