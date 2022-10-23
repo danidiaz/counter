@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
@@ -27,26 +28,17 @@ module Dep.Repository (
 ) where
 
 import Data.Result
+import GHC.Generics (Generic)
 
 data Repository rid resource m = Repository
   { withResource :: rid -> m (RunWithResource resource m),
     withExistingResource :: rid -> m (RunWithExistingResource resource m)
-  }
+  } deriving stock Generic
 
--- | Work with a resource in the repository.
---
--- The argument function receives @Nothing@ if the resource doesn't exist,
--- or @Just theResource@ if it does.
---
--- The argument function returns a result @b@ along with the new state of the
--- resource. If we the new state is @Nothing@, the resource will be deleted.
 newtype RunWithResource r m = RunWithResource
   { runWithResource :: forall b. (Maybe r -> (b, Maybe r)) -> m b
   }
 
--- Here the argument function doesn't need to consider the case when the
--- resource is missing, that's already handled by 
--- 'runWithExistingResource' itself.
 newtype RunWithExistingResource r m = RunWithExistingResource
   { runWithExistingResource ::
       forall b.
