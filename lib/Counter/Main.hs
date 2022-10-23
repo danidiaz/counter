@@ -85,6 +85,8 @@ data Cauldron phase m = Cauldron
 
 type Configurator = Kleisli Parser Value 
 
+-- | A configuration phase in which components parse their corresponding
+-- sections of the global configuration file.
 parseConf :: FromJSON a => Configurator a
 parseConf = Kleisli parseJSON
 
@@ -94,8 +96,9 @@ parseConf = Kleisli parseJSON
 -- Also a good place to start service threads.
 type Allocator = ContT () IO
 
--- | We have an allocation phase followed by a "wiring" phase in which we tie
--- the knot to obtain the fully constructed DI context.
+-- | We have a configuration phase followed by an allocation phase followed by a
+-- "wiring" phase in which we tie the knot to obtain the fully constructed DI
+-- context.
 type Phases m = Configurator `Compose` Allocator `Compose` Constructor (Cauldron Identity m)
 
 -- Monad used by the model.
