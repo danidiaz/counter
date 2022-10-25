@@ -83,10 +83,10 @@ data Cauldron phase m = Cauldron
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, DemotableFieldNames, Phased)
 
-type Configurator = Kleisli Parser Value 
-
 -- | A configuration phase in which components parse their corresponding
 -- sections of the global configuration file.
+type Configurator = Kleisli Parser Value 
+
 parseConf :: FromJSON a => Configurator a
 parseConf = Kleisli parseJSON
 
@@ -108,7 +108,7 @@ type M = ReaderT Env IO
 cauldron :: Cauldron (Phases M) M
 cauldron =
   Cauldron
-    { _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> Dep.Logger.HandlerAware.make,
+    { _logger = fromBare $ parseConf <&> \conf -> noAlloc <&> \() -> Dep.Logger.HandlerAware.make conf,
       _counterRepository =
         fromBare $
           noConf <&> \() -> alloc (newIORef Map.empty) <&> \ref env ->
@@ -157,7 +157,7 @@ cauldron =
     noAlloc = pure ()
     logExtraMessage :: Cauldron Identity M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
-      φ log message
+      φ log Debug message
       action
 
 -- | Boilerplate that enables components to find their own dependencies in the

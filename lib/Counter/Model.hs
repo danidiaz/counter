@@ -84,7 +84,7 @@ newtype DeleteCounter m = DeleteCounter {deleteCounter :: CounterId -> m (Result
 
 makeDeleteCounter :: (Monad m, Has Logger m env, Has CounterRepository m env) => env -> DeleteCounter m
 makeDeleteCounter (Call φ) = DeleteCounter \counterId -> do
-  φ log $ "Requesting counter deletion " ++ show counterId
+  φ log Info $ "Requesting counter deletion " ++ show counterId
   RunWithExistingResource {runWithExistingResource} <- φ withExistingResource counterId
   runWithExistingResource (\(_ :: Counter) -> ((), Nothing))
 
@@ -96,7 +96,7 @@ makeCreateCounter (Call φ) = CreateCounter do
   RunWithResource {runWithResource} <- φ withResource counterId
   runWithResource \case
     Nothing -> (Ok counterId, Just (Counter {counterId, counterValue = 0}))
-    Just _ -> (Error Collision, Nothing)
+    Just _ -> (Err Collision, Nothing)
 
 -- | This is a domain-relevant error.
 data Collision = Collision

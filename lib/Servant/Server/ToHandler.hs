@@ -77,7 +77,7 @@ instance ToDTO mark a' a => ToHandlerResult' mark 'IsNotResult a a' where
 
 instance (ToServerError mark err, ToHandlerResult mark a a') => ToHandlerResult' mark 'IsResult (Result err a) a' where
   toHandlerResult' = \case
-    Error err -> Left (toServerError @mark err)
+    Err err -> Left (toServerError @mark err)
     Ok r -> toHandlerResult @mark r
 
 -- | Convert some model error to a 'ServerError'.

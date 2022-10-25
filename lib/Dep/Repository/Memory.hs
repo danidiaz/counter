@@ -26,7 +26,7 @@ import Data.Result
 import Data.Tuple (swap)
 import Dep.Has
 import Dep.Has.Call
-import Dep.Logger (Logger (log))
+import Dep.Logger (Logger (log), LogLevel(..))
 import Dep.Repository
   ( Missing (Missing),
     Repository (..),
@@ -48,12 +48,12 @@ make ::
   Repository rid resource m
 make ref (Call φ) = do
   let withResource k = do
-        φ log "withResource"
+        φ log Debug "withResource"
         pure $
           RunWithResource \callback -> do
             liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
       withExistingResource k = do
-        φ log "withExistingResource"
+        φ log Debug "withExistingResource"
         -- Here we use a version of withResource taken from the
         -- dependency injection environment, which unlike the one defined
         -- above, it might have been instrumented in the composition root
@@ -64,7 +64,7 @@ make ref (Call φ) = do
           runWithResource
             \mx -> case mx of
               Nothing ->
-                (Error Missing, Nothing)
+                (Err Missing, Nothing)
               Just x ->
                 let (b, mr) = callback x
                  in (Ok b, mr)

@@ -1,6 +1,6 @@
 -- | Yes, this is basically Either.
-module Data.Result (Result(Error,Ok)) where
+module Data.Result (Result(Err,Ok)) where
 
 data Result e a = 
-    Error e
+    Err e
   | Ok a
