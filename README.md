@@ -64,6 +64,10 @@ I wanted to scratch the following itches:
     - BUT! Components in the model *should know nothing about handlers, or Servant*. 
         - Only the logger component is allowed to know that handlers exist.
 
+- Each component should be in charge of parsing its *own* piece of the
+configuration. When wiring components together, the different configuration
+parsers are aggregated.
+
 Links
 -----
 
