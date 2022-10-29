@@ -36,6 +36,7 @@ instance FromJSON Conf where
 data Manager m = Manager {
     resetLogLevel :: m (),
     setLogLevel :: LogLevel -> m (),
+    currentLogLevel :: m LogLevel,
     logger :: Logger m
   }
 
@@ -63,6 +64,7 @@ make ::
 make Conf {minimumLevel} ref _ = Manager {
   resetLogLevel = liftIO $ writeIORef ref minimumLevel,
   setLogLevel = \newLevel -> liftIO $ writeIORef ref newLevel,
+  currentLogLevel = liftIO $ readIORef ref,
   logger = Logger \level message -> do
     currentLevel <- liftIO $ readIORef ref
     when (level >= currentLevel) do
