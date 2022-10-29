@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -121,8 +122,10 @@ cauldron =
         fromBare $
           noConf <&> \() ->
             Dep.Repository.Memory.alloc <&> \ref env ->
-              let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
-               in repo
+              Dep.Repository.Memory.make ref env & \case 
+                -- https://twitter.com/chris__martin/status/1586066539039453185
+                repo@Repository {withResource} ->
+                  repo
                     { withResource =
                         withResource -- Here we instrument a single method
                           & advise (logExtraMessage env "Extra log message added by instrumentation")
@@ -152,8 +155,9 @@ cauldron =
         fromBare $
           noConf <&> \() ->
             noAlloc <&> \() env ->
-              let servantServer@(ServantServer {server}) = makeServantServer env
-               in servantServer {server = addHandlerContext [] server},
+              makeServantServer env & \case
+                servantServer@(ServantServer {server}) ->
+                  servantServer {server = addHandlerContext [] server},
       _runner =
         fromBare $
           parseConf <&> \conf -> noAlloc <&> \() -> makeServantRunner conf
