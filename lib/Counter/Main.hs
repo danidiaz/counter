@@ -7,7 +7,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -20,9 +19,11 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Counter.Main where
 
+import Control.Arrow (Kleisli (..))
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Cont
@@ -30,22 +31,28 @@ import Counter.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
+import Data.Aeson qualified as A
+import Data.Aeson.Types qualified as A
 import Data.Function ((&))
 import Data.Functor
 import Data.IORef
 import Data.Kind (Type)
 import Data.Map.Strict as Map (empty)
+import Data.String (fromString)
+import Data.Yaml
 import Dep.Env
   ( Autowireable,
     Autowired (..),
     Compose (Compose),
     Constructor,
+    DemotableFieldNames,
     FieldsFindableByType,
     Identity (Identity),
     Phased,
     fixEnv,
     fromBare,
-    pullPhase, mapPhaseWithFieldNames, DemotableFieldNames,
+    mapPhaseWithFieldNames,
+    pullPhase,
   )
 import Dep.Has (Has (dep))
 import Dep.Has.Call
@@ -58,11 +65,6 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
-import Data.Yaml
-import Data.Aeson qualified as A
-import Data.Aeson.Types qualified as A
-import Control.Arrow (Kleisli(..))
-import Data.String(fromString)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -71,7 +73,8 @@ import Data.String(fromString)
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
 data Cauldron phase m = Cauldron
-  { _logger :: phase (Logger m),
+  { _loggerManager :: phase (Dep.Logger.HandlerAware.Manager m),
+    _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
     _getCounter :: phase (GetCounter m),
     _increaseCounter :: phase (IncreaseCounter m),
@@ -85,7 +88,7 @@ data Cauldron phase m = Cauldron
 
 -- | A configuration phase in which components parse their corresponding
 -- sections of the global configuration file.
-type Configurator = Kleisli Parser Value 
+type Configurator = Kleisli Parser Value
 
 parseConf :: FromJSON a => Configurator a
 parseConf = Kleisli parseJSON
@@ -108,18 +111,24 @@ type M = ReaderT Env IO
 cauldron :: Cauldron (Phases M) M
 cauldron =
   Cauldron
-    { _logger = fromBare $ parseConf <&> \conf -> noAlloc <&> \() -> Dep.Logger.HandlerAware.make conf,
+    { _loggerManager =
+        fromBare $
+          parseConf <&> \conf ->
+            Dep.Logger.HandlerAware.alloc conf <&> \ref ->
+              Dep.Logger.HandlerAware.make conf ref,
+      _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> Dep.Logger.HandlerAware.logger . dep,
       _counterRepository =
         fromBare $
-          noConf <&> \() -> alloc (newIORef Map.empty) <&> \ref env ->
-            let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
-             in repo
-                  { withResource =
-                      withResource -- Here we instrument a single method
-                        & advise (logExtraMessage env "Extra log message added by instrumentation")
-                  }
-                  -- Here we add additional instrumentation for all the methods in the component.
-                  & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods."),
+          noConf <&> \() ->
+            Dep.Repository.Memory.alloc <&> \ref env ->
+              let repo@Repository {withResource} = Dep.Repository.Memory.make ref env
+               in repo
+                    { withResource =
+                        withResource -- Here we instrument a single method
+                          & advise (logExtraMessage env "Extra log message added by instrumentation")
+                    }
+                    -- Here we add additional instrumentation for all the methods in the component.
+                    & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods."),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -141,9 +150,10 @@ cauldron =
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
         fromBare $
-          noConf <&> \() -> noAlloc <&> \() env ->
-            let servantServer@(ServantServer {server}) = makeServantServer env
-             in servantServer {server = addHandlerContext [] server},
+          noConf <&> \() ->
+            noAlloc <&> \() env ->
+              let servantServer@(ServantServer {server}) = makeServantServer env
+               in servantServer {server = addHandlerContext [] server},
       _runner =
         fromBare $
           parseConf <&> \conf -> noAlloc <&> \() -> makeServantRunner conf
@@ -151,8 +161,6 @@ cauldron =
   where
     noConf :: Configurator ()
     noConf = pure ()
-    alloc :: IO a -> ContT () IO a
-    alloc = liftIO
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
     logExtraMessage :: Cauldron Identity M -> String -> forall r. Advice Top Env IO r
@@ -178,14 +186,14 @@ instance HasHandlerContext Env where
 main :: IO ()
 main = do
   -- CONFIGURATION PHASE
-  let Kleisli (A.withObject "configuration" -> parser) = 
-          cauldron 
+  let Kleisli (A.withObject "configuration" -> parser) =
+        cauldron
           -- Make the parsers which parse the conf of each component search for
           -- that conf in the global configuration, using the field name of the
           -- component in the composition root.
-        & mapPhaseWithFieldNames 
-            (\fieldName (Kleisli f) -> Kleisli \o -> A.explicitParseField f o (fromString fieldName)) 
-        & pullPhase @(Kleisli Parser Object) 
+          & mapPhaseWithFieldNames
+            (\fieldName (Kleisli f) -> Kleisli \o -> A.explicitParseField f o (fromString fieldName))
+          & pullPhase @(Kleisli Parser Object)
   Right confValue <- decodeFileEither @A.Value "conf.yaml"
   case parseEither parser confValue of
     Left err -> print err

@@ -16,7 +16,7 @@
 {-# LANGUAGE UnicodeSyntax #-}
 
 -- | A repository implementation that uses an in-memory map.
-module Dep.Repository.Memory (make) where
+module Dep.Repository.Memory (alloc, make) where
 
 import Control.Monad.IO.Class
 import Data.IORef
@@ -34,6 +34,10 @@ import Dep.Repository
     RunWithResource (..),
   )
 import Prelude hiding (log)
+
+
+alloc :: MonadIO m => m (IORef (Map k v))
+alloc = liftIO $ newIORef Map.empty 
 
 make ::
   ( MonadIO m,
