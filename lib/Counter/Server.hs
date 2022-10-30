@@ -92,12 +92,12 @@ newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env 
 -- 'ServantError's, convert API DTOs to and from model datatypes...
 makeServantServer ::
   ( m ~ ReaderT env IO,
-    Has GetCounter m cauldron,
-    Has IncreaseCounter m cauldron,
-    Has DeleteCounter m cauldron,
-    Has CreateCounter m cauldron
+    Has GetCounter m deps,
+    Has IncreaseCounter m deps,
+    Has DeleteCounter m deps,
+    Has CreateCounter m deps
   ) =>
-  cauldron ->
+  deps ->
   ServantServer env m
 makeServantServer (Call φ) = ServantServer
   \(_ :: User) ->

@@ -16,3 +16,9 @@ import Data.UUID
 import Servant.API
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
 
+data KnobAPI knob mode = KnobAPI
+  { getKnob :: mode :- Get '[JSON] knob,
+    setKnob :: mode :- ReqBody '[JSON] knob :> PostNoContent,
+    resetKnob :: mode :- DeleteNoContent
+  }
+  deriving stock (Generic)
