@@ -41,14 +41,14 @@ alloc = liftIO $ newIORef Map.empty
 
 make ::
   ( MonadIO m,
-    Has Logger m env,
+    Has Logger m deps,
     -- The component requires itself, to enable instrumentation of
     -- self-invocations
-    Has (Repository rid resource) m env,
+    Has (Repository rid resource) m deps,
     Ord rid
   ) =>
   IORef (Map rid resource) ->
-  env ->
+  deps ->
   Repository rid resource m
 make ref (Call φ) = do
   let withResource k = do
