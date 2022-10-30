@@ -39,6 +39,7 @@ library lib-counter
                       Dep.Repository
                       Dep.Repository.Memory
                       Dep.Has.Call
+                      Dep.Knob
     hs-source-dirs:   lib
     build-depends:    
         aeson                              >= 2.0.3 && < 2.1,

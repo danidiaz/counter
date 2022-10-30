@@ -74,7 +74,7 @@ import Prelude hiding (log)
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
 data DepEnv phase m = DepEnv
-  { _loggerManager :: phase (Dep.Logger.HandlerAware.Manager m),
+  { loggerKnob :: phase (Dep.Logger.HandlerAware.LoggerKnob m),
     _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
     _getCounter :: phase (GetCounter m),
@@ -114,12 +114,12 @@ type M = ReaderT Env IO
 depEnv :: DepEnv (Phases M) M
 depEnv =
   DepEnv
-    { _loggerManager =
+    { loggerKnob =
         fromBare $
           parseConf <&> \conf ->
             Dep.Logger.HandlerAware.alloc conf <&> \ref ->
               Dep.Logger.HandlerAware.make conf ref,
-      _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> Dep.Logger.HandlerAware.logger . dep,
+      _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> Dep.Logger.HandlerAware.unknob,
       _counterRepository =
         fromBare $
           noConf <&> \() ->
@@ -176,7 +176,7 @@ depEnv =
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
-deriving via Autowired (FinalDepEnv m) instance Autowireable r_ m FinalDepEnv => Has r_ m (FinalDepEnv m)
+deriving via Autowired (FinalDepEnv m) instance Autowireable r_ m (FinalDepEnv m) => Has r_ m (FinalDepEnv m)
 
 -- | This is the 'ReaderT' environment in which the handlers run.
 newtype Env = Env

@@ -1,24 +1,30 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- A Logger implementation that is aware of the current Servant handler.
-module Dep.Logger.HandlerAware (Conf(..), make, alloc, Manager (..)) where
+module Dep.Logger.HandlerAware (Conf(..), make, alloc, LoggerKnob, unknob) where
 
 import Control.Lens
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Dep.Logger
+import Dep.Has
+import Dep.Has.Call
+import Dep.Knob
 import Servant.Server.HandlerContext
-import Data.Aeson ((.:), FromJSON (..), Value(..), withObject)
+import Data.Aeson ((.:), ToJSON (..), FromJSON (..), Value(..), withObject)
 import GHC.Generics (Generic)
 import Data.IORef
 
 newtype Conf = Conf { 
         minimumLevel :: LogLevel
     } deriving stock (Show, Generic)
+
 
 instance FromJSON Conf where
   parseJSON = withObject "Conf" \o -> do
@@ -33,17 +39,12 @@ instance FromJSON Conf where
           _ -> fail "unknown level"
     pure $ Conf {minimumLevel}
 
-data Manager m = Manager {
-    resetLogLevel :: m (),
-    setLogLevel :: LogLevel -> m (),
-    currentLogLevel :: m LogLevel,
-    logger :: Logger m
-  }
-
-type State = IORef LogLevel
+type State = IORef Conf
 
 alloc :: MonadIO m => Conf -> m State
-alloc Conf {minimumLevel} = liftIO $ newIORef minimumLevel
+alloc conf  = liftIO $ newIORef conf
+
+type LoggerKnob = Knob Conf Logger
 
 -- | Notice that *none* of the components in @Counter.Model@ has a
 -- @HasHandlerContext@ constraint, despite many of them using the 'Logger'
@@ -60,15 +61,18 @@ make ::
   State ->
   -- | not used, but for consistency with other components
   env ->
-  Manager m
-make Conf {minimumLevel} ref _ = Manager {
-  resetLogLevel = liftIO $ writeIORef ref minimumLevel,
-  setLogLevel = \newLevel -> liftIO $ writeIORef ref newLevel,
-  currentLogLevel = liftIO $ readIORef ref,
-  logger = Logger \level message -> do
-    currentLevel <- liftIO $ readIORef ref
-    when (level >= currentLevel) do
+  LoggerKnob m
+make conf ref _ = Knob {
+  resetKnob = liftIO $ writeIORef ref conf,
+  setKnob = \newConf -> liftIO $ writeIORef ref newConf,
+  getKnob = liftIO $ readIORef ref,
+  getKnobbed = Logger \level message -> do
+    Conf {minimumLevel} <- liftIO $ readIORef ref
+    when (level >= minimumLevel) do
       context <- view handlerContext
       liftIO $ putStrLn $ show (reverse context) ++ " " ++ message
       pure ()
 }
+
+unknob :: Has LoggerKnob m deps => deps -> Logger m
+unknob = getKnobbed @Conf @Logger . dep
