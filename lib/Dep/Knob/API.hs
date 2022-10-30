@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -15,6 +16,7 @@ import Data.Text
 import Data.UUID
 import Servant.API
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
+import Dep.Knob (Knob)
 
 data KnobAPI knob mode = KnobAPI
   { getKnob :: mode :- Get '[JSON] knob,
@@ -22,3 +24,7 @@ data KnobAPI knob mode = KnobAPI
     resetKnob :: mode :- DeleteNoContent
   }
   deriving stock (Generic)
+
+type family KnobAPIFor k where
+    KnobAPIFor (Knob knob knobbed) = KnobAPI knob
+

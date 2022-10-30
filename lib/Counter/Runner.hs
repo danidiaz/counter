@@ -48,6 +48,18 @@ import Control.Monad.Reader
 import Data.Proxy
 import Data.Aeson
 import GHC.Generics (Generic)
+import Servant.API
+import Servant.API.Generic (Generic, GenericMode (type (:-)))
+import qualified Dep.Logger.HandlerAware
+import Dep.Knob
+import Dep.Knob.API
+import Dep.Knob.Server
+import Dep.Logger (Logger)
+
+type FullAPI = 
+    API
+    :<|>
+    "knob" :> "logger" :> NamedRoutes (KnobAPIFor Dep.Logger.HandlerAware.LoggerKnob)
 
 --
 -- AUTHENTICATION
@@ -72,8 +84,10 @@ type ServantRunner :: Type -> (Type -> Type) -> Type
 newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 
 makeServantRunner ::
+  forall m renv env.
   ( m ~ ReaderT renv IO,
-    Has (ServantServer renv) m env
+    Has (ServantServer renv) m env,
+    Has Dep.Logger.HandlerAware.LoggerKnob m env
   ) =>
   Conf ->
   env -> 
@@ -81,13 +95,15 @@ makeServantRunner ::
 makeServantRunner Conf {port} env = ServantRunner {
     runServer = \renv ->
         let ServantServer {server} = dep env
+            KnobServer {knobServer} = makeKnobServer @Logger $ dep env
+            fullServer = server :<|> knobServer 
             hoistedServer =
                 hoistServerWithContext
-                    (Proxy @API)
+                    (Proxy @FullAPI)
                     (Proxy @'[BasicAuthCheck User])
                     (`runReaderT` renv)
-                    server
+                    fullServer
             app :: Application
-            app = serveWithContext (Proxy @API) basicAuthServerContext hoistedServer
+            app = serveWithContext (Proxy @FullAPI) basicAuthServerContext hoistedServer
          in run port app
     }

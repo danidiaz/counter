@@ -20,6 +20,7 @@ import Servant.Server.HandlerContext
 import Data.Aeson ((.:), ToJSON (..), FromJSON (..), Value(..), withObject)
 import GHC.Generics (Generic)
 import Data.IORef
+import Data.Aeson.Types (object)
 
 newtype Conf = Conf { 
         minimumLevel :: LogLevel
@@ -38,6 +39,9 @@ instance FromJSON Conf where
           String "fatal" -> pure Fatal
           _ -> fail "unknown level"
     pure $ Conf {minimumLevel}
+
+instance ToJSON Conf where
+  toJSON v = object []
 
 type State = IORef Conf
 
