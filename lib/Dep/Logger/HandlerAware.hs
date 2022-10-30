@@ -77,9 +77,9 @@ make ::
   LoggerKnob m
 make conf ref _ = Knob {
   resetKnob = liftIO $ writeIORef ref conf,
-  setKnobConf = \newConf -> liftIO $ writeIORef ref newConf,
-  getKnobConf = liftIO $ readIORef ref,
-  getKnobComponent = Logger \level message -> do
+  setKnob = \newConf -> liftIO $ writeIORef ref newConf,
+  inspectKnob = liftIO $ readIORef ref,
+  knobComponent = Logger \level message -> do
     Conf {minimumLevel} <- liftIO $ readIORef ref
     when (level >= minimumLevel) do
       context <- view handlerContext
@@ -89,4 +89,4 @@ make conf ref _ = Knob {
 
 -- | Extract the inner Logger from the LoggerKnob
 unknob :: Has LoggerKnob m deps => deps -> Logger m
-unknob = getKnobComponent @Conf @Logger . dep
+unknob = knobComponent @Conf @Logger . dep

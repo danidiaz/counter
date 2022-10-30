@@ -19,7 +19,7 @@ import Data.Kind
 type Knob :: Type -> ((Type -> Type) -> Type) -> (Type -> Type) -> Type
 data Knob conf component m = Knob {
     resetKnob :: m (),
-    setKnobConf :: conf -> m (),
-    getKnobConf :: m conf,
-    getKnobComponent :: component m
+    setKnob :: conf -> m (),
+    inspectKnob :: m conf,
+    knobComponent :: component m
   }

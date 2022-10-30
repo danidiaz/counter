@@ -20,8 +20,8 @@ import Servant.API.Generic (Generic, GenericMode (type (:-)))
 import Dep.Knob (Knob)
 
 data KnobAPI conf mode = KnobAPI
-  { getKnobConf :: mode :- Get '[JSON] conf,
-    setKnobConf :: mode :- ReqBody '[JSON] conf :> PostNoContent,
+  { inspectKnob :: mode :- Get '[JSON] conf,
+    setKnob :: mode :- ReqBody '[JSON] conf :> PostNoContent,
     -- | Not sure if DELETE is the semantically correct way of resetting the
     -- Knob's value, but let's go with it for now.
     resetKnob :: mode :- DeleteNoContent

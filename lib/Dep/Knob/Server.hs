@@ -59,7 +59,7 @@ makeKnobServer ::
 makeKnobServer knob =
   KnobServer @conf
     KnobAPI
-      { getKnobConf = mapReaderT liftIO $ Dep.Knob.getKnobConf @conf knob,
-        setKnobConf = \conf -> mapReaderT liftIO $ Dep.Knob.setKnobConf @conf knob conf $> NoContent,
+      { inspectKnob = mapReaderT liftIO $ Dep.Knob.inspectKnob @conf knob,
+        setKnob = \conf -> mapReaderT liftIO $ Dep.Knob.setKnob @conf knob conf $> NoContent,
         resetKnob = mapReaderT liftIO $ Dep.Knob.resetKnob @conf knob $> NoContent
       }
