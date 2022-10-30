@@ -18,7 +18,7 @@
 {-# LANGUAGE UnicodeSyntax #-}
 
 -- | A Servant server for exposing the controls of a 'Knob' as REST endpoints.
-module Dep.Knob.Server where
+module Dep.Knob.Server (KnobAPIFor, KnobServer(..), makeKnobServer) where
 
 import Control.Monad.Reader
 import Control.Monad.Trans.Reader
@@ -42,6 +42,9 @@ import Servant.Server
 import Servant.Server.Generic
 import Servant.Server.ToHandler
 
+type family KnobAPIFor k where
+    KnobAPIFor (Knob knob knobbed) = KnobAPI knob
+
 type KnobServer :: Type -> Type -> (Type -> Type) -> Type
 newtype KnobServer knob env m = KnobServer {knobServer :: ServerT (NamedRoutes (KnobAPI knob)) (ReaderT env Handler)}
 
@@ -53,10 +56,10 @@ makeKnobServer ::
   ) =>
   Knob conf component m ->
   KnobServer conf env m
-makeKnobServer theKnob =
+makeKnobServer knob =
   KnobServer @conf
     KnobAPI
-      { getKnobConf = mapReaderT liftIO $ Dep.Knob.getKnobConf @conf theKnob,
-        setKnobConf = \conf -> mapReaderT liftIO $ Dep.Knob.setKnobConf @conf theKnob conf $> NoContent,
-        resetKnob = mapReaderT liftIO $ Dep.Knob.resetKnob @conf theKnob $> NoContent
+      { getKnobConf = mapReaderT liftIO $ Dep.Knob.getKnobConf @conf knob,
+        setKnobConf = \conf -> mapReaderT liftIO $ Dep.Knob.setKnobConf @conf knob conf $> NoContent,
+        resetKnob = mapReaderT liftIO $ Dep.Knob.resetKnob @conf knob $> NoContent
       }

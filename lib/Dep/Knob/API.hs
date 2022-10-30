@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 -- | A Servant API type for exposing the controls of a 'Knob'.
-module Dep.Knob.API where
+module Dep.Knob.API (KnobAPI(..)) where
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Text
@@ -27,7 +27,3 @@ data KnobAPI knob mode = KnobAPI
     resetKnob :: mode :- DeleteNoContent
   }
   deriving stock (Generic)
-
-type family KnobAPIFor k where
-    KnobAPIFor (Knob knob knobbed) = KnobAPI knob
-

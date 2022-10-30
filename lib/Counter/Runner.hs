@@ -56,11 +56,14 @@ import Dep.Knob.API
 import Dep.Knob.Server
 import Dep.Logger (Logger)
 
+-- | The full API adds some "frameworky" endpoints to the "domain" API that
+-- deals with counters.
 type FullAPI = 
     API
     :<|>
     BasicAuth "bar-realm" User :> "knob" :> NamedRoutes VariousKnobsAPI 
 
+-- | Accumulates various knob endpoints for inspecting and tweaking components at runtime.
 data VariousKnobsAPI mode = VariousKnobsAPI
   { loggerKnob :: mode :- "logger" :> NamedRoutes (KnobAPIFor Dep.Logger.HandlerAware.LoggerKnob)
   }
