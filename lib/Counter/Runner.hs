@@ -59,7 +59,7 @@ import Dep.Logger (Logger)
 type FullAPI = 
     API
     :<|>
-    "knob" :> "logger" :> NamedRoutes (KnobAPIFor Dep.Logger.HandlerAware.LoggerKnob)
+    BasicAuth "bar-realm" User :> "knob" :> "logger" :> NamedRoutes (KnobAPIFor Dep.Logger.HandlerAware.LoggerKnob)
 
 --
 -- AUTHENTICATION
@@ -95,8 +95,8 @@ makeServantRunner ::
 makeServantRunner Conf {port} env = ServantRunner {
     runServer = \renv ->
         let ServantServer {server} = dep env
-            KnobServer {knobServer} = makeKnobServer @Logger $ dep env
-            fullServer = server :<|> knobServer 
+            KnobServer {knobServer} = makeKnobServer $ dep @Dep.Logger.HandlerAware.LoggerKnob env
+            fullServer = server :<|> \_ -> knobServer 
             hoistedServer =
                 hoistServerWithContext
                     (Proxy @FullAPI)
