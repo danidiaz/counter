@@ -73,7 +73,7 @@ import Prelude hiding (log)
 -- DI contexts move through a series of phases while they are being build.
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
-data Cauldron phase m = Cauldron
+data DepEnv phase m = DepEnv
   { _loggerManager :: phase (Dep.Logger.HandlerAware.Manager m),
     _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
@@ -86,6 +86,8 @@ data Cauldron phase m = Cauldron
   }
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, DemotableFieldNames, Phased)
+
+type FinalDepEnv m = DepEnv Identity m
 
 -- | A configuration phase in which components parse their corresponding
 -- sections of the global configuration file.
@@ -103,15 +105,15 @@ type Allocator = ContT () IO
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
 -- context.
-type Phases m = Configurator `Compose` Allocator `Compose` Constructor (Cauldron Identity m)
+type Phases m = Configurator `Compose` Allocator `Compose` Constructor (FinalDepEnv m)
 
 -- Monad used by the model.
 type M :: Type -> Type
 type M = ReaderT Env IO
 
-cauldron :: Cauldron (Phases M) M
-cauldron =
-  Cauldron
+depEnv :: DepEnv (Phases M) M
+depEnv =
+  DepEnv
     { _loggerManager =
         fromBare $
           parseConf <&> \conf ->
@@ -167,14 +169,14 @@ cauldron =
     noConf = pure ()
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
-    logExtraMessage :: Cauldron Identity M -> String -> forall r. Advice Top Env IO r
+    logExtraMessage :: FinalDepEnv M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
       action
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
-deriving via Autowired (Cauldron Identity m) instance Autowireable r_ m (Cauldron Identity m) => Has r_ m (Cauldron Identity m)
+deriving via Autowired (FinalDepEnv m) instance Autowireable r_ m FinalDepEnv => Has r_ m (FinalDepEnv m)
 
 -- | This is the 'ReaderT' environment in which the handlers run.
 newtype Env = Env
@@ -191,7 +193,7 @@ main :: IO ()
 main = do
   -- CONFIGURATION PHASE
   let Kleisli (A.withObject "configuration" -> parser) =
-        cauldron
+        depEnv
           -- Make the parsers which parse the conf of each component search for
           -- that conf in the global configuration, using the field name of the
           -- component in the composition root.
@@ -205,7 +207,7 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let wired :: Cauldron Identity M = fixEnv constructors
+        let wired :: FinalDepEnv M = fixEnv constructors
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep wired
         runServer
