@@ -26,7 +26,8 @@ newtype Conf = Conf {
         minimumLevel :: LogLevel
     } deriving stock (Show, Generic)
 
-
+-- Repeating the names of each branch in FromJSON and ToJSON is awful,
+-- but let's go with it for now.
 instance FromJSON Conf where
   parseJSON = withObject "Conf" \o -> do
     levelValue <- o .: "minimumLevel"
@@ -41,7 +42,15 @@ instance FromJSON Conf where
     pure $ Conf {minimumLevel}
 
 instance ToJSON Conf where
-  toJSON v = object []
+  toJSON (Conf {minimumLevel}) = 
+    let levelString = case minimumLevel of
+          Trace -> "trace"
+          Debug -> "debug"
+          Info -> "info"
+          Warn -> "warn"
+          Error -> "error"
+          Fatal -> "fatal"
+     in object [("minimumLevel", String levelString)]
 
 type State = IORef Conf
 
@@ -58,19 +67,19 @@ type LoggerKnob = Knob Conf Logger
 -- implementation.
 make ::
   ( MonadIO m,
-    MonadReader renv m,
-    HasHandlerContext renv
+    MonadReader env m,
+    HasHandlerContext env
   ) =>
   Conf ->
   State ->
   -- | not used, but for consistency with other components
-  env ->
+  deps ->
   LoggerKnob m
 make conf ref _ = Knob {
   resetKnob = liftIO $ writeIORef ref conf,
-  setKnob = \newConf -> liftIO $ writeIORef ref newConf,
-  getKnob = liftIO $ readIORef ref,
-  getKnobbed = Logger \level message -> do
+  setKnobConf = \newConf -> liftIO $ writeIORef ref newConf,
+  getKnobConf = liftIO $ readIORef ref,
+  getKnobComponent = Logger \level message -> do
     Conf {minimumLevel} <- liftIO $ readIORef ref
     when (level >= minimumLevel) do
       context <- view handlerContext
@@ -78,5 +87,6 @@ make conf ref _ = Knob {
       pure ()
 }
 
+-- | Extract the inner Logger from the LoggerKnob
 unknob :: Has LoggerKnob m deps => deps -> Logger m
-unknob = getKnobbed @Conf @Logger . dep
+unknob = getKnobComponent @Conf @Logger . dep

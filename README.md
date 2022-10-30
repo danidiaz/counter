@@ -24,6 +24,27 @@ This is a trivial REST API which provides counters. Some example curls:
 
 There's no persistence, counters are kept in a map in memory.
 
+These curls control the logger:
+
+    # Get current state of the logger
+    curl --request GET \
+    --url http://localhost:8000/knob/logger \
+    -v -u "user:password"
+
+    # Set log level to error
+    curl --request POST \
+    --url http://localhost:8000/knob/logger \
+    -v -u "user:password"
+    --header 'Content-Type: application/json' \
+    --data '{
+        "minimumLevel": "error"
+    }'
+
+    # Reset log level to original value
+    curl --request DELETE \
+    --url http://localhost:8000/knob/logger \
+    -v -u "user:password"
+
 Log messages look like this. Notice they include the [names](https://www.tweag.io/blog/2022-02-24-named-routes/) of the servant handlers.
 
     [nix-shell:~/counter]$ cabal run

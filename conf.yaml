@@ -1,5 +1,6 @@
-_logger :
+_loggerKnob :
   minimumLevel : trace
+_logger :
 _counterRepository :
 _getCounter :
 _increaseCounter :

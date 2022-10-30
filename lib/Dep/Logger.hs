@@ -1,5 +1,8 @@
+{-# LANGUAGE DeriveGeneric #-}
 -- | Interface for a logger component.
 module Dep.Logger (Logger (..), Message, LogLevel (..)) where
+
+import GHC.Generics
 
 type Message = String
 
@@ -12,4 +15,4 @@ data LogLevel
   | Warn
   | Error
   | Fatal
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show, Ord, Generic)

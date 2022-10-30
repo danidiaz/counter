@@ -9,6 +9,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | A Servant API type for exposing the controls of a 'Knob'.
 module Dep.Knob.API where
 
 import Data.Aeson (FromJSON, ToJSON)
@@ -19,8 +20,10 @@ import Servant.API.Generic (Generic, GenericMode (type (:-)))
 import Dep.Knob (Knob)
 
 data KnobAPI knob mode = KnobAPI
-  { getKnob :: mode :- Get '[JSON] knob,
-    setKnob :: mode :- ReqBody '[JSON] knob :> PostNoContent,
+  { getKnobConf :: mode :- Get '[JSON] knob,
+    setKnobConf :: mode :- ReqBody '[JSON] knob :> PostNoContent,
+    -- | Not sure if DELETE is the semantically correct way of resetting the
+    -- Knob's value, but let's go with it for now.
     resetKnob :: mode :- DeleteNoContent
   }
   deriving stock (Generic)

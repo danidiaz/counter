@@ -74,7 +74,7 @@ import Prelude hiding (log)
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
 data DepEnv phase m = DepEnv
-  { loggerKnob :: phase (Dep.Logger.HandlerAware.LoggerKnob m),
+  { _loggerKnob :: phase (Dep.Logger.HandlerAware.LoggerKnob m),
     _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
     _getCounter :: phase (GetCounter m),
@@ -114,7 +114,7 @@ type M = ReaderT Env IO
 depEnv :: DepEnv (Phases M) M
 depEnv =
   DepEnv
-    { loggerKnob =
+    { _loggerKnob =
         fromBare $
           parseConf <&> \conf ->
             Dep.Logger.HandlerAware.alloc conf <&> \ref ->

@@ -59,7 +59,12 @@ import Dep.Logger (Logger)
 type FullAPI = 
     API
     :<|>
-    BasicAuth "bar-realm" User :> "knob" :> "logger" :> NamedRoutes (KnobAPIFor Dep.Logger.HandlerAware.LoggerKnob)
+    BasicAuth "bar-realm" User :> "knob" :> NamedRoutes VariousKnobsAPI 
+
+data VariousKnobsAPI mode = VariousKnobsAPI
+  { loggerKnob :: mode :- "logger" :> NamedRoutes (KnobAPIFor Dep.Logger.HandlerAware.LoggerKnob)
+  }
+  deriving stock (Generic)
 
 --
 -- AUTHENTICATION
@@ -84,24 +89,24 @@ type ServantRunner :: Type -> (Type -> Type) -> Type
 newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 
 makeServantRunner ::
-  forall m renv env.
-  ( m ~ ReaderT renv IO,
-    Has (ServantServer renv) m env,
-    Has Dep.Logger.HandlerAware.LoggerKnob m env
+  forall m deps env.
+  ( m ~ ReaderT env IO,
+    Has (ServantServer env) m deps,
+    Has Dep.Logger.HandlerAware.LoggerKnob m deps
   ) =>
   Conf ->
-  env -> 
-  ServantRunner renv m
-makeServantRunner Conf {port} env = ServantRunner {
-    runServer = \renv ->
-        let ServantServer {server} = dep env
-            KnobServer {knobServer} = makeKnobServer $ dep @Dep.Logger.HandlerAware.LoggerKnob env
-            fullServer = server :<|> \_ -> knobServer 
+  deps -> 
+  ServantRunner env m
+makeServantRunner Conf {port} deps = ServantRunner {
+    runServer = \env ->
+        let ServantServer {server} = dep deps
+            KnobServer {knobServer} = makeKnobServer $ dep @Dep.Logger.HandlerAware.LoggerKnob deps
+            fullServer = server :<|> \_ -> VariousKnobsAPI { loggerKnob = knobServer }
             hoistedServer =
                 hoistServerWithContext
                     (Proxy @FullAPI)
                     (Proxy @'[BasicAuthCheck User])
-                    (`runReaderT` renv)
+                    (`runReaderT` env)
                     fullServer
             app :: Application
             app = serveWithContext (Proxy @FullAPI) basicAuthServerContext hoistedServer

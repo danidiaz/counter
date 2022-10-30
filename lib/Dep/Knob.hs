@@ -4,14 +4,21 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+-- | We might want to inspect and change the configuration of some component after 
+-- the application has started.
+--
+-- 'Knob' is a general interface that provices that. 
+--
+-- @makeX@ constructors for components that can be tuned at runtime return the
+-- component wrapped in a 'Knob'.
 module Dep.Knob (Knob (..)) where
 
 import Data.Kind
 
 type Knob :: Type -> ((Type -> Type) -> Type) -> (Type -> Type) -> Type
-data Knob knob knobbed m = Knob {
+data Knob conf component m = Knob {
     resetKnob :: m (),
-    setKnob :: knob -> m (),
-    getKnob :: m knob,
-    getKnobbed :: knobbed m
+    setKnobConf :: conf -> m (),
+    getKnobConf :: m conf,
+    getKnobComponent :: component m
   }
