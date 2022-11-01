@@ -61,6 +61,7 @@ import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.ReaderAdvice
 import Dep.Repository
+import Dep.Conf
 import Dep.Repository.Memory
 import GHC.Generics (Generic)
 import GHC.Records
@@ -89,17 +90,9 @@ data DepEnv phase m = DepEnv
 
 type FinalDepEnv m = DepEnv Identity m
 
--- | A configuration phase in which components parse their corresponding
--- sections of the global configuration file.
-type Configurator = Kleisli Parser Value
-
-parseConf :: FromJSON a => Configurator a
-parseConf = Kleisli parseJSON
-
 -- | An allocation phase in which components allocate some resource that they'll
 -- use during operation.
---
--- Also a good place to start service threads.
+-- Typically file handles, or mutable references.
 type Allocator = ContT () IO
 
 -- | We have a configuration phase followed by an allocation phase followed by a
@@ -116,7 +109,7 @@ depEnv =
   DepEnv
     { _loggerKnob =
         fromBare $
-          parseConf <&> \conf ->
+          underField "logger" <&> \conf ->
             Dep.Logger.HandlerAware.alloc conf <&> \ref ->
               Dep.Logger.HandlerAware.make conf ref,
       _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> Dep.Logger.HandlerAware.unknob,
@@ -162,11 +155,9 @@ depEnv =
                   servantServer {server = addHandlerContext [] server},
       _runner =
         fromBare $
-          parseConf <&> \conf -> noAlloc <&> \() -> makeServantRunner conf
+          underField "runner" <&> \conf -> noAlloc <&> \() -> makeServantRunner conf
     }
   where
-    noConf :: Configurator ()
-    noConf = pure ()
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
     logExtraMessage :: FinalDepEnv M -> String -> forall r. Advice Top Env IO r
@@ -192,16 +183,8 @@ instance HasHandlerContext Env where
 main :: IO ()
 main = do
   -- CONFIGURATION PHASE
-  let Kleisli (A.withObject "configuration" -> parser) =
-        depEnv
-          -- Make the parsers which parse the conf of each component search for
-          -- that conf in the global configuration, using the field name of the
-          -- component in the composition root.
-          & mapPhaseWithFieldNames
-            (\fieldName (Kleisli f) -> Kleisli \o -> A.explicitParseField f o (fromString fieldName))
-          & pullPhase @(Kleisli Parser Object)
-  Right confValue <- decodeFileEither @A.Value "conf.yaml"
-  case parseEither parser confValue of
+  parseResult <- parseYamlFile (pullPhase depEnv) "conf.yaml"
+  case parseResult of
     Left err -> print err
     Right allocators -> do
       -- ALLOCATION PHASE

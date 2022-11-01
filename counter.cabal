@@ -39,6 +39,7 @@ library lib-counter
                       Dep.Repository
                       Dep.Repository.Memory
                       Dep.Has.Call
+                      Dep.Conf
                       Dep.Knob
                       Dep.Knob.API
                       Dep.Knob.Server
