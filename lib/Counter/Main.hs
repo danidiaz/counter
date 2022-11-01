@@ -86,7 +86,7 @@ data DepEnv phase m = DepEnv
     _runner :: phase (ServantRunner Env m)
   }
   deriving stock (Generic)
-  deriving anyclass (FieldsFindableByType, DemotableFieldNames, Phased)
+  deriving anyclass (FieldsFindableByType, Phased)
 
 type FinalDepEnv m = DepEnv Identity m
 
