@@ -1,11 +1,4 @@
-_loggerKnob :
+logger :
   minimumLevel : trace
-_logger :
-_counterRepository :
-_getCounter :
-_increaseCounter :
-_deleteCounter :
-_createCounter :
-_server :
-_runner :
+runner :
   port: 8000
