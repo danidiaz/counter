@@ -67,6 +67,7 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
+import Data.Data (Typeable)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -179,6 +180,25 @@ instance HasHandlerContext Env where
   handlerContext f s =
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
+
+
+--
+-- move these definitions to Dep.Env if they prove useful.
+type AccumConstructor (w :: Type) (env :: Type)  = (->) (w, env) `Compose` (,) w `Compose` Identity
+
+fixEnvAccum :: (Phased env_, Typeable env_, Typeable m, Monoid w, Typeable w) => 
+        -- | Environment where each field is wrapped in a 'Constructor' 
+
+        env_ (AccumConstructor w (env_ Identity m)) m -> 
+        -- | Fully constructed environment, ready for use.
+
+        (w, env_ Identity m)
+fixEnvAccum env = 
+  let f = pullPhase <$> pullPhase env
+      (w, finalEnv) = f (w, finalEnv)
+   in (w, finalEnv)
+--
+--   
 
 main :: IO ()
 main = do
