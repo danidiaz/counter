@@ -138,10 +138,10 @@ depEnv =
       --              call log "Extra log message added by instrumentation"
       --              withResource rid
       --          },
-      _getCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeGetCounter,
-      _increaseCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeIncreaseCounter,
-      _deleteCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeDeleteCounter,
-      _createCounter = fromBare $ noConf <&> \() -> noAlloc <&> \() -> makeCreateCounter,
+      _getCounter = purePhases makeGetCounter,
+      _increaseCounter = purePhases makeIncreaseCounter,
+      _deleteCounter = purePhases makeDeleteCounter,
+      _createCounter = purePhases makeCreateCounter,
       _server =
         -- Is this the best place to call 'addHandlerContext'?  It could be done
         -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
@@ -165,6 +165,8 @@ depEnv =
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
       action
+    purePhases :: forall r m . (FinalDepEnv m -> r m) -> Phases m (r m)
+    purePhases f = fromBare $ noConf <&> \() -> noAlloc <&> \() -> f
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
