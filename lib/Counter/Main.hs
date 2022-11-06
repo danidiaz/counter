@@ -59,6 +59,7 @@ import Dep.Env
   )
 import Dep.Has (Has (dep))
 import Dep.Has.Call
+import Dep.Knob.Server
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.ReaderAdvice
@@ -76,14 +77,14 @@ import Prelude hiding (log)
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
 data DepEnv phase m = DepEnv
-  { _loggerKnob :: phase (Dep.Logger.HandlerAware.LoggerKnob m),
-    _logger :: phase (Logger m),
+  { _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
     _getCounter :: phase (GetCounter m),
     _increaseCounter :: phase (IncreaseCounter m),
     _deleteCounter :: phase (DeleteCounter m),
     _createCounter :: phase (CreateCounter m),
     _server :: phase (ServantServer Env m),
+    _knobServer :: phase (KnobServer Env m),
     _runner :: phase (ServantRunner Env m)
   }
   deriving stock (Generic)
@@ -99,7 +100,7 @@ type Allocator = ContT () IO
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
 -- context.
-type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor () (FinalDepEnv m)
+type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (KnobMap m) (FinalDepEnv m)
 
 -- Monad used by the model.
 type M :: Type -> Type
@@ -108,13 +109,12 @@ type M = ReaderT Env IO
 depEnv :: DepEnv (Phases M) M
 depEnv =
   DepEnv
-    { _loggerKnob =
+    { _logger =
         fromBare $
           underField "logger" <&> \conf ->
-            Dep.Logger.HandlerAware.alloc conf <&> \ref ->
-              noAccum $
-                Dep.Logger.HandlerAware.make conf ref,
-      _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> noAccum $ Dep.Logger.HandlerAware.unknob,
+            Dep.Logger.HandlerAware.alloc conf <&> \ref (_, _ :: FinalDepEnv M) ->
+              Dep.Logger.HandlerAware.make conf ref & \case
+                (loggerKnob, logger) -> (knobNamed "logger" loggerKnob, logger),
       _counterRepository =
         fromBare $
           noConf <&> \() ->
@@ -155,15 +155,18 @@ depEnv =
             makeServantServer env & \case
               servantServer@(ServantServer {server}) ->
                 servantServer {server = addHandlerContext [] server},
+      _knobServer = purePhases \(knobs, _) -> (mempty, makeKnobServer knobs),
       _runner =
         fromBare $
-          underField "runner" <&> \conf -> noAlloc <&> \() -> noAccum $ makeServantRunner conf
+          underField "runner" <&> \conf ->
+            noAlloc <&> \() -> 
+              noAccum \env -> makeServantRunner conf env
     }
   where
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
-    purePhases :: forall r m. (((), FinalDepEnv m) -> ((), r m)) -> Phases m (r m)
-    purePhases f = fromBare $ noConf <&> \() -> noAlloc <&> \() -> f
+    purePhases :: forall r m. ((KnobMap m, FinalDepEnv m) -> (KnobMap m, r m)) -> Phases m (r m)
+    purePhases f = fromBare $ noConf <&> \_ -> noAlloc <&> \() -> f
     noAccum :: forall a b w. Monoid w => (a -> b) -> (w, a) -> (w, b)
     noAccum f (_, a) = (mempty, f a)
     logExtraMessage :: FinalDepEnv M -> String -> forall r. Advice Top Env IO r
@@ -214,7 +217,7 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let ((), wired :: FinalDepEnv M) = fixEnvAccum constructors
+        let (_, wired :: FinalDepEnv M) = fixEnvAccum constructors
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep wired
         runServer

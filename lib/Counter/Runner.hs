@@ -61,13 +61,7 @@ import Dep.Logger (Logger)
 type FullAPI = 
     API
     :<|>
-    BasicAuth "bar-realm" User :> "knob" :> NamedRoutes VariousKnobsAPI 
-
--- | Accumulates various knob endpoints for inspecting and tweaking components at runtime.
-data VariousKnobsAPI mode = VariousKnobsAPI
-  { loggerKnob :: mode :- "logger" :> NamedRoutes (KnobAPIFor Dep.Logger.HandlerAware.LoggerKnob)
-  }
-  deriving stock (Generic)
+    BasicAuth "bar-realm" User :> "knob" :> KnobCollectionAPI 
 
 --
 -- AUTHENTICATION
@@ -95,7 +89,7 @@ makeServantRunner ::
   forall m deps env.
   ( m ~ ReaderT env IO,
     Has (ServantServer env) m deps,
-    Has Dep.Logger.HandlerAware.LoggerKnob m deps
+    Has (KnobServer env) m deps
   ) =>
   Conf ->
   deps -> 
@@ -103,8 +97,8 @@ makeServantRunner ::
 makeServantRunner Conf {port} deps = ServantRunner {
     runServer = \env ->
         let ServantServer {server} = dep deps
-            KnobServer {knobServer} = makeKnobServer $ dep @Dep.Logger.HandlerAware.LoggerKnob deps
-            fullServer = server :<|> \_ -> VariousKnobsAPI { loggerKnob = knobServer }
+            KnobServer {knobServer} = dep deps
+            fullServer = server :<|> \_ -> knobServer
             hoistedServer =
                 hoistServerWithContext
                     (Proxy @FullAPI)

@@ -16,10 +16,9 @@ module Dep.Knob (Knob (..)) where
 import Data.Kind
 
 -- | The @conf@ need not be the same type as the configuration read from file.
-type Knob :: Type -> ((Type -> Type) -> Type) -> (Type -> Type) -> Type
-data Knob conf component m = Knob {
-    resetKnob :: m (),
-    setKnob :: conf -> m (),
+type Knob :: Type -> (Type -> Type) -> Type
+data Knob conf m = Knob {
     inspectKnob :: m conf,
-    knobComponent :: component m
+    setKnob :: conf -> m (),
+    resetKnob :: m ()
   }
