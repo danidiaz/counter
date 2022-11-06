@@ -27,7 +27,6 @@ module Dep.Repository (
     Missing (Missing),
 ) where
 
-import Data.Result
 import GHC.Generics (Generic)
 
 data Repository rid resource m = Repository
@@ -43,7 +42,7 @@ newtype RunWithExistingResource r m = RunWithExistingResource
   { runWithExistingResource ::
       forall b.
       (r -> (b, Maybe r)) ->
-      m (Result Missing b) -- ^ 'Missing' if the resource didn't exist.
+      m (Either Missing b) -- ^ 'Missing' if the resource didn't exist.
   }
 
 -- Error type

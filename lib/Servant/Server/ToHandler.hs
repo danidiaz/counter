@@ -32,7 +32,6 @@ module Servant.Server.ToHandler (
 import Control.Monad.Except
 import Control.Monad.Reader
 import Data.Coerce
-import Data.Result
 import Servant.Server
   ( Handler (..),
     ServerError,
@@ -63,7 +62,7 @@ class ToHandlerResult mark before after where
 data IsResult = IsResult | IsNotResult
 
 type family DetectResult result :: IsResult where
-  DetectResult (Result e a) = 'IsResult
+  DetectResult (Either e a) = 'IsResult
   DetectResult _ = 'IsNotResult
 
 class ToHandlerResult' mark (is :: IsResult) before after where
@@ -75,10 +74,10 @@ instance (ToHandlerResult' mark (DetectResult before) before after) => ToHandler
 instance ToDTO mark a' a => ToHandlerResult' mark 'IsNotResult a a' where
   toHandlerResult' = Right . toDTO @mark
 
-instance (ToServerError mark err, ToHandlerResult mark a a') => ToHandlerResult' mark 'IsResult (Result err a) a' where
+instance (ToServerError mark err, ToHandlerResult mark a a') => ToHandlerResult' mark 'IsResult (Either err a) a' where
   toHandlerResult' = \case
-    Err err -> Left (toServerError @mark err)
-    Ok r -> toHandlerResult @mark r
+    Left err -> Left (toServerError @mark err)
+    Right r -> toHandlerResult @mark r
 
 -- | Convert some model error to a 'ServerError'.
 class ToServerError mark x where

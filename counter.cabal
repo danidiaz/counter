@@ -31,7 +31,6 @@ library lib-counter
                       Counter.Server
                       Counter.Runner
                       Counter.Model
-                      Data.Result
                       Servant.Server.ToHandler
                       Servant.Server.HandlerContext
                       Dep.Logger

@@ -22,7 +22,6 @@ import Control.Monad.IO.Class
 import Data.IORef
 import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Result
 import Data.Tuple (swap)
 import Dep.Has
 import Dep.Has.Call
@@ -68,10 +67,10 @@ make ref (Call φ) = do
           runWithResource
             \mx -> case mx of
               Nothing ->
-                (Err Missing, Nothing)
+                (Left Missing, Nothing)
               Just x ->
                 let (b, mr) = callback x
-                 in (Ok b, mr)
+                 in (Right b, mr)
    in Repository
         { withResource,
           withExistingResource
