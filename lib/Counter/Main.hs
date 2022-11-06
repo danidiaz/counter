@@ -5,9 +5,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -34,6 +34,7 @@ import Counter.Runner
 import Counter.Server
 import Data.Aeson qualified as A
 import Data.Aeson.Types qualified as A
+import Data.Data (Typeable)
 import Data.Function ((&))
 import Data.Functor
 import Data.IORef
@@ -41,6 +42,7 @@ import Data.Kind (Type)
 import Data.Map.Strict as Map (empty)
 import Data.String (fromString)
 import Data.Yaml
+import Dep.Conf
 import Dep.Env
   ( Autowireable,
     Autowired (..),
@@ -61,13 +63,11 @@ import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.ReaderAdvice
 import Dep.Repository
-import Dep.Conf
 import Dep.Repository.Memory
 import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
-import Data.Data (Typeable)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -99,7 +99,7 @@ type Allocator = ContT () IO
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
 -- context.
-type Phases m = Configurator `Compose` Allocator `Compose` Constructor (FinalDepEnv m)
+type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor () (FinalDepEnv m)
 
 -- Monad used by the model.
 type M :: Type -> Type
@@ -112,22 +112,24 @@ depEnv =
         fromBare $
           underField "logger" <&> \conf ->
             Dep.Logger.HandlerAware.alloc conf <&> \ref ->
-              Dep.Logger.HandlerAware.make conf ref,
-      _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> Dep.Logger.HandlerAware.unknob,
+              noAccum $
+                Dep.Logger.HandlerAware.make conf ref,
+      _logger = fromBare $ noConf <&> \() -> noAlloc <&> \() -> noAccum $ Dep.Logger.HandlerAware.unknob,
       _counterRepository =
         fromBare $
           noConf <&> \() ->
-            Dep.Repository.Memory.alloc <&> \ref env ->
-              Dep.Repository.Memory.make ref env & \case 
-                -- https://twitter.com/chris__martin/status/1586066539039453185
-                repo@Repository {withResource} ->
-                  repo
-                    { withResource =
-                        withResource -- Here we instrument a single method
-                          & advise (logExtraMessage env "Extra log message added by instrumentation")
-                    }
-                    -- Here we add additional instrumentation for all the methods in the component.
-                    & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods."),
+            Dep.Repository.Memory.alloc <&> \ref ->
+              noAccum \env ->
+                Dep.Repository.Memory.make ref env & \case
+                  -- https://twitter.com/chris__martin/status/1586066539039453185
+                  repo@Repository {withResource} ->
+                    repo
+                      { withResource =
+                          withResource -- Here we instrument a single method
+                            & advise (logExtraMessage env "Extra log message added by instrumentation")
+                      }
+                      -- Here we add additional instrumentation for all the methods in the component.
+                      & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods."),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -138,35 +140,36 @@ depEnv =
       --              call log "Extra log message added by instrumentation"
       --              withResource rid
       --          },
-      _getCounter = purePhases makeGetCounter,
-      _increaseCounter = purePhases makeIncreaseCounter,
-      _deleteCounter = purePhases makeDeleteCounter,
-      _createCounter = purePhases makeCreateCounter,
+      _getCounter = purePhases $ noAccum makeGetCounter,
+      _increaseCounter = purePhases $ noAccum makeIncreaseCounter,
+      _deleteCounter = purePhases $ noAccum makeDeleteCounter,
+      _createCounter = purePhases $ noAccum makeCreateCounter,
       _server =
         -- Is this the best place to call 'addHandlerContext'?  It could be done
         -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
         -- would require extra constraints in the function, and it would be
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
-        fromBare $
-          noConf <&> \() ->
-            noAlloc <&> \() env ->
-              makeServantServer env & \case
-                servantServer@(ServantServer {server}) ->
-                  servantServer {server = addHandlerContext [] server},
+        purePhases $
+          noAccum \env ->
+            makeServantServer env & \case
+              servantServer@(ServantServer {server}) ->
+                servantServer {server = addHandlerContext [] server},
       _runner =
         fromBare $
-          underField "runner" <&> \conf -> noAlloc <&> \() -> makeServantRunner conf
+          underField "runner" <&> \conf -> noAlloc <&> \() -> noAccum $ makeServantRunner conf
     }
   where
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
+    purePhases :: forall r m. (((), FinalDepEnv m) -> ((), r m)) -> Phases m (r m)
+    purePhases f = fromBare $ noConf <&> \() -> noAlloc <&> \() -> f
+    noAccum :: forall a b w. Monoid w => (a -> b) -> (w, a) -> (w, b)
+    noAccum f (_, a) = (mempty, f a)
     logExtraMessage :: FinalDepEnv M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
       action
-    purePhases :: forall r m . (FinalDepEnv m -> r m) -> Phases m (r m)
-    purePhases f = fromBare $ noConf <&> \() -> noAlloc <&> \() -> f
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
@@ -183,24 +186,23 @@ instance HasHandlerContext Env where
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
-
 --
 -- move these definitions to Dep.Env if they prove useful.
-type AccumConstructor (w :: Type) (env :: Type)  = (->) (w, env) `Compose` (,) w `Compose` Identity
+type AccumConstructor (w :: Type) (env :: Type) = (->) (w, env) `Compose` (,) w `Compose` Identity
 
-fixEnvAccum :: (Phased env_, Typeable env_, Typeable m, Monoid w, Typeable w) => 
-        -- | Environment where each field is wrapped in a 'Constructor' 
-
-        env_ (AccumConstructor w (env_ Identity m)) m -> 
-        -- | Fully constructed environment, ready for use.
-
-        (w, env_ Identity m)
-fixEnvAccum env = 
+fixEnvAccum ::
+  (Phased env_, Typeable env_, Typeable m, Monoid w, Typeable w) =>
+  -- | Environment where each field is wrapped in a 'Constructor'
+  env_ (AccumConstructor w (env_ Identity m)) m ->
+  -- | Fully constructed environment, ready for use.
+  (w, env_ Identity m)
+fixEnvAccum env =
   let f = pullPhase <$> pullPhase env
       (w, finalEnv) = f (w, finalEnv)
    in (w, finalEnv)
+
 --
---   
+--
 
 main :: IO ()
 main = do
@@ -212,7 +214,7 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let wired :: FinalDepEnv M = fixEnv constructors
+        let ((), wired :: FinalDepEnv M) = fixEnvAccum constructors
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep wired
         runServer
