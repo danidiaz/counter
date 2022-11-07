@@ -14,8 +14,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- | This is the application's "model".
 --
@@ -25,16 +25,16 @@
 -- obtains its dependencies (like loggers) using a helper 'Has' typeclass. This
 -- is done to fit the dependency injection framework we're using.
 module Counter.Model
-  ( CounterId(..),
-    Counter(..),
+  ( CounterId (..),
+    Counter (..),
     CounterRepository,
-    CreateCounter(..),
+    CreateCounter (..),
     makeCreateCounter,
-    GetCounter(..),
+    GetCounter (..),
     makeGetCounter,
-    IncreaseCounter(..),
+    IncreaseCounter (..),
     makeIncreaseCounter,
-    DeleteCounter(..),
+    DeleteCounter (..),
     makeDeleteCounter,
     Collision (..),
     Missing (..),
@@ -43,8 +43,10 @@ where
 
 import Control.Monad.IO.Class
 import Data.Functor
+import Data.Time (UTCTime)
 import Data.UUID
 import Data.UUID.V4
+import Dep.Clock
 import Dep.Has
 import Dep.Has.Call
 import Dep.Logger
@@ -54,14 +56,17 @@ import Prelude hiding (log)
 
 newtype CounterId = CounterId UUID
   deriving stock (Show, Ord, Eq)
-  -- we could have ToJSON here, but for logging and debugging, not for REST serialization
+
+-- we could have ToJSON here, but for logging and debugging, not for REST serialization
 
 data Counter = Counter
   { counterId :: CounterId,
-    counterValue :: Int
+    counterValue :: Int,
+    lastUpdated :: UTCTime
   }
   deriving stock (Show, Generic)
-  -- we could have ToJSON here, but for logging and debugging, not for REST serialization
+
+-- we could have ToJSON here, but for logging and debugging, not for REST serialization
 
 type CounterRepository = Repository CounterId Counter
 
@@ -74,14 +79,27 @@ makeGetCounter (Call φ) = GetCounter \counterId -> do
 
 newtype IncreaseCounter m = IncreaseCounter {increaseCounter :: CounterId -> m (Either Missing ())}
 
-makeIncreaseCounter :: (Monad m, Has CounterRepository m env) => env -> IncreaseCounter m
+makeIncreaseCounter ::
+  ( Monad m,
+    Has Clock m env,
+    Has CounterRepository m env
+  ) =>
+  env ->
+  IncreaseCounter m
 makeIncreaseCounter (Call φ) = IncreaseCounter \counterId -> do
+  now <- φ getNow
   RunWithExistingResource {runWithExistingResource} <- φ withExistingResource counterId
-  runWithExistingResource (\c@Counter {counterValue} -> ((), Just (c {counterValue = succ counterValue})))
+  runWithExistingResource (\c@Counter {counterValue} -> ((), Just (c {counterValue = succ counterValue, lastUpdated = now})))
 
 newtype DeleteCounter m = DeleteCounter {deleteCounter :: CounterId -> m (Either Missing ())}
 
-makeDeleteCounter :: (Monad m, Has Logger m env, Has CounterRepository m env) => env -> DeleteCounter m
+makeDeleteCounter ::
+  ( Monad m,
+    Has Logger m env,
+    Has CounterRepository m env
+  ) =>
+  env ->
+  DeleteCounter m
 makeDeleteCounter (Call φ) = DeleteCounter \counterId -> do
   φ log Info $ "Requesting counter deletion " ++ show counterId
   RunWithExistingResource {runWithExistingResource} <- φ withExistingResource counterId
@@ -89,12 +107,19 @@ makeDeleteCounter (Call φ) = DeleteCounter \counterId -> do
 
 newtype CreateCounter m = CreateCounter {createCounter :: m (Either Collision CounterId)}
 
-makeCreateCounter :: (MonadIO m, Has CounterRepository m env) => env -> CreateCounter m
+makeCreateCounter ::
+  ( MonadIO m,
+    Has Clock m env,
+    Has CounterRepository m env
+  ) =>
+  env ->
+  CreateCounter m
 makeCreateCounter (Call φ) = CreateCounter do
   counterId <- CounterId <$> liftIO nextRandom
+  now <- φ getNow
   RunWithResource {runWithResource} <- φ withResource counterId
   runWithResource \case
-    Nothing -> (Right counterId, Just (Counter {counterId, counterValue = 0}))
+    Nothing -> (Right counterId, Just (Counter {counterId, counterValue = 0, lastUpdated = now}))
     Just _ -> (Left Collision, Nothing)
 
 -- | This is a domain-relevant error.

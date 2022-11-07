@@ -53,6 +53,7 @@ import Dep.Env
     Identity (Identity),
     Phased,
     fixEnv,
+    Bare,
     fromBare,
     mapPhaseWithFieldNames,
     pullPhase,
@@ -69,6 +70,8 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
+import Dep.Clock
+import qualified Dep.Clock.Real
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -77,7 +80,8 @@ import Prelude hiding (log)
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
 data DepEnv phase m = DepEnv
-  { _logger :: phase (Logger m),
+  { _clock :: phase (Clock m),
+    _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
     _getCounter :: phase (GetCounter m),
     _increaseCounter :: phase (IncreaseCounter m),
@@ -106,10 +110,14 @@ type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (Kno
 type M :: Type -> Type
 type M = ReaderT Env IO
 
+-- | >>> :kind! Bare (Phases M (Logger M))
+-- Bare (Phases M (Logger M)) :: *
+
 depEnv :: DepEnv (Phases M) M
 depEnv =
   DepEnv
-    { _logger =
+    { _clock = purePhases $ noAccum $ \_ -> Dep.Clock.Real.make,
+      _logger =
         fromBare $
           underField "logger" <&> \conf ->
             Dep.Logger.HandlerAware.alloc conf <&> \ref (_, _ :: FinalDepEnv M) ->
