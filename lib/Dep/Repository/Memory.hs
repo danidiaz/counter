@@ -1,5 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE NumDecimals #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -18,12 +20,14 @@
 -- | A repository implementation that uses an in-memory map.
 module Dep.Repository.Memory (alloc, make) where
 
+import Control.Concurrent.Async
 import Control.Monad.IO.Class
+import Control.Monad.IO.Unlift
 import Control.Monad.Trans.Cont
 import Data.IORef
 import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Time (UTCTime)
+import Data.Time (UTCTime, diffUTCTime)
 import Data.Tuple (swap)
 import Dep.Has
 import Dep.Has.Call
@@ -35,13 +39,18 @@ import Dep.Repository
     RunWithResource (..),
   )
 import Prelude hiding (log)
+import Control.Monad
+import Dep.Clock
+import Data.Time.Clock
+import Control.Concurrent (threadDelay)
 
 alloc :: MonadIO m => m (IORef (Map k v))
 alloc = liftIO $ newIORef Map.empty
 
 make ::
-  ( MonadIO m,
+  ( MonadUnliftIO m,
     Has Logger m deps,
+    Has Clock m deps,
     -- The component requires itself, to enable instrumentation of
     -- self-invocations
     Has (Repository rid resource) m deps,
@@ -52,7 +61,16 @@ make ::
   deps ->
   (ContT () m (), Repository rid resource m)
 make getLastUpdated ref (Call φ) =
-  ( pure (),
+  ( let activity = forever do
+          liftIO $ threadDelay 10e6
+          φ log Debug "Cleaning stale entries..."
+          now <- φ getNow
+          let notStale (getLastUpdated -> lastUpdated) = 
+                diffUTCTime now lastUpdated < secondsToNominalDiffTime 30
+          liftIO do atomicModifyIORef' ref (\m -> (Map.filter notStale m, ()))
+     in ContT \f -> do
+          runInIO <- askRunInIO
+          liftIO $ withAsync (runInIO activity) \_ -> runInIO (f ()),
     do
       let withResource k = do
             φ log Debug "withResource"

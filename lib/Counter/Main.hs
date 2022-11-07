@@ -238,8 +238,6 @@ main = do
                   -- "addHandlerContext".
                   _handlerContext = []
                 }
-        runServer initialEnv
-
--- flip runReaderT initialEnv $
---   runContT (sequenceA_ launchers) \() -> liftIO do
---     runServer initialEnv
+        flip runReaderT initialEnv $
+          runContT (sequenceA_ launchers) \() -> liftIO do
+            runServer initialEnv
