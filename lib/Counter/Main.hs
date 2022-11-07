@@ -101,10 +101,12 @@ type FinalDepEnv m = DepEnv Identity m
 -- Typically file handles, or mutable references.
 type Allocator = ContT () IO
 
+type Accumulator m = KnobMap m
+
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
 -- context.
-type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (KnobMap m) (FinalDepEnv m)
+type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (Accumulator m) (FinalDepEnv m)
 
 -- Monad used by the model.
 type M :: Type -> Type
@@ -173,7 +175,7 @@ depEnv =
   where
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
-    purePhases :: forall r m. ((KnobMap m, FinalDepEnv m) -> (KnobMap m, r m)) -> Phases m (r m)
+    purePhases :: forall r m. ((Accumulator m, FinalDepEnv m) -> (Accumulator m, r m)) -> Phases m (r m)
     purePhases f = fromBare $ noConf <&> \_ -> noAlloc <&> \() -> f
     noAccum :: forall a b w. Monoid w => (a -> b) -> (w, a) -> (w, b)
     noAccum f (_, a) = (mempty, f a)
