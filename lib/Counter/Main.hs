@@ -29,12 +29,14 @@ import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Cont
 import Counter.Model
+import Counter.Model qualified as Data.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
 import Data.Aeson qualified as A
 import Data.Aeson.Types qualified as A
 import Data.Data (Typeable)
+import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
 import Data.IORef
@@ -42,10 +44,13 @@ import Data.Kind (Type)
 import Data.Map.Strict as Map (empty)
 import Data.String (fromString)
 import Data.Yaml
+import Dep.Clock
+import Dep.Clock.Real qualified
 import Dep.Conf
 import Dep.Env
   ( Autowireable,
     Autowired (..),
+    Bare,
     Compose (Compose),
     Constructor,
     DemotableFieldNames,
@@ -53,7 +58,6 @@ import Dep.Env
     Identity (Identity),
     Phased,
     fixEnv,
-    Bare,
     fromBare,
     mapPhaseWithFieldNames,
     pullPhase,
@@ -70,8 +74,6 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
-import Dep.Clock
-import qualified Dep.Clock.Real
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -101,7 +103,7 @@ type FinalDepEnv m = DepEnv Identity m
 -- Typically file handles, or mutable references.
 type Allocator = ContT () IO
 
-type Accumulator m = KnobMap m
+type Accumulator m = ([ContT () m ()], KnobMap m)
 
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
@@ -114,7 +116,6 @@ type M = ReaderT Env IO
 
 -- | >>> :kind! Bare (Phases M (Logger M))
 -- Bare (Phases M (Logger M)) :: *
-
 depEnv :: DepEnv (Phases M) M
 depEnv =
   DepEnv
@@ -124,22 +125,24 @@ depEnv =
           underField "logger" <&> \conf ->
             Dep.Logger.HandlerAware.alloc conf <&> \ref (_, _ :: FinalDepEnv M) ->
               Dep.Logger.HandlerAware.make conf ref & \case
-                (loggerKnob, logger) -> (knobNamed "logger" loggerKnob, logger),
+                (loggerKnob, logger) ->
+                  logger
+                    & (,) (mempty, knobNamed "logger" loggerKnob),
       _counterRepository =
         fromBare $
           noConf <&> \() ->
-            Dep.Repository.Memory.alloc <&> \ref ->
-              noAccum \env ->
-                Dep.Repository.Memory.make ref env & \case
-                  -- https://twitter.com/chris__martin/status/1586066539039453185
-                  repo@Repository {withResource} ->
-                    repo
-                      { withResource =
-                          withResource -- Here we instrument a single method
-                            & advise (logExtraMessage env "Extra log message added by instrumentation")
-                      }
-                      -- Here we add additional instrumentation for all the methods in the component.
-                      & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods."),
+            Dep.Repository.Memory.alloc <&> \ref (_, env :: FinalDepEnv M) ->
+              Dep.Repository.Memory.make Data.Model.lastUpdated ref env & \case
+                -- https://twitter.com/chris__martin/status/1586066539039453185
+                (launcher, repo@Repository {withResource}) ->
+                  repo
+                    { withResource =
+                        withResource -- Here we instrument a single method
+                          & advise (logExtraMessage env "Extra log message added by instrumentation")
+                    }
+                    -- Here we add additional instrumentation for all the methods in the component.
+                    & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods.")
+                    & (,) ([launcher], mempty),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -165,11 +168,11 @@ depEnv =
             makeServantServer env & \case
               servantServer@(ServantServer {server}) ->
                 servantServer {server = addHandlerContext [] server},
-      _knobServer = purePhases \(knobs, _) -> (mempty, makeKnobServer knobs),
+      _knobServer = purePhases \((_, knobs), _) -> (mempty, makeKnobServer knobs),
       _runner =
         fromBare $
           underField "runner" <&> \conf ->
-            noAlloc <&> \() -> 
+            noAlloc <&> \() ->
               noAccum \env -> makeServantRunner conf env
     }
   where
@@ -227,12 +230,16 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let (_, wired :: FinalDepEnv M) = fixEnvAccum constructors
+        let ((launchers, _), wired :: FinalDepEnv M) = fixEnvAccum constructors
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep wired
-        runServer
-          Env
-            { -- This starts empty, because the handler context is (optially) set by
-              -- "addHandlerContext".
-              _handlerContext = []
-            }
+        let initialEnv =
+              Env
+                { -- This starts empty, because the handler context is (optially) set by
+                  -- "addHandlerContext".
+                  _handlerContext = []
+                }
+        runServer initialEnv
+        -- flip runReaderT initialEnv $
+        --   runContT (sequenceA_ launchers) \() -> liftIO do
+        --     runServer initialEnv
