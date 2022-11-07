@@ -123,7 +123,7 @@ depEnv =
       _logger =
         fromBare $
           underField "logger" <&> \conf ->
-            Dep.Logger.HandlerAware.alloc conf <&> \ref (_, _ :: FinalDepEnv M) ->
+            Dep.Logger.HandlerAware.alloc conf <&> \ref ~(_, _ :: FinalDepEnv M) ->
               Dep.Logger.HandlerAware.make conf ref & \case
                 (loggerKnob, logger) ->
                   logger
@@ -131,7 +131,7 @@ depEnv =
       _counterRepository =
         fromBare $
           noConf <&> \() ->
-            Dep.Repository.Memory.alloc <&> \ref (_, env :: FinalDepEnv M) ->
+            Dep.Repository.Memory.alloc <&> \ref ~(_, env :: FinalDepEnv M) ->
               Dep.Repository.Memory.make Data.Model.lastUpdated ref env & \case
                 -- https://twitter.com/chris__martin/status/1586066539039453185
                 (launcher, repo@Repository {withResource}) ->
@@ -168,7 +168,7 @@ depEnv =
             makeServantServer env & \case
               servantServer@(ServantServer {server}) ->
                 servantServer {server = addHandlerContext [] server},
-      _knobServer = purePhases \((_, knobs), _) -> (mempty, makeKnobServer knobs),
+      _knobServer = purePhases \ ~((_, knobs), _) -> (mempty, makeKnobServer knobs),
       _runner =
         fromBare $
           underField "runner" <&> \conf ->
@@ -181,7 +181,7 @@ depEnv =
     purePhases :: forall r m. ((Accumulator m, FinalDepEnv m) -> (Accumulator m, r m)) -> Phases m (r m)
     purePhases f = fromBare $ noConf <&> \_ -> noAlloc <&> \() -> f
     noAccum :: forall a b w. Monoid w => (a -> b) -> (w, a) -> (w, b)
-    noAccum f (_, a) = (mempty, f a)
+    noAccum f ~(_, a) = (mempty, f a)
     logExtraMessage :: FinalDepEnv M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
@@ -214,8 +214,7 @@ fixEnvAccum ::
   (w, env_ Identity m)
 fixEnvAccum env =
   let f = pullPhase <$> pullPhase env
-      (w, finalEnv) = f (w, finalEnv)
-   in (w, finalEnv)
+   in fix f
 
 --
 --
@@ -240,6 +239,7 @@ main = do
                   _handlerContext = []
                 }
         runServer initialEnv
-        -- flip runReaderT initialEnv $
-        --   runContT (sequenceA_ launchers) \() -> liftIO do
-        --     runServer initialEnv
+
+-- flip runReaderT initialEnv $
+--   runContT (sequenceA_ launchers) \() -> liftIO do
+--     runServer initialEnv
