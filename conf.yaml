@@ -1,4 +1,7 @@
 logger :
   minimumLevel : trace
+repository:
+  checkIntervalSeconds: 5
+  staleAfterSeconds : 10
 runner :
   port: 8000

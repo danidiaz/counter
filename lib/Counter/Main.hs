@@ -130,9 +130,9 @@ depEnv =
                     & (,) (mempty, knobNamed "logger" loggerKnob),
       _counterRepository =
         fromBare $
-          noConf <&> \() ->
+          underField "repository" <&> \conf ->
             Dep.Repository.Memory.alloc <&> \ref ~(_, env :: FinalDepEnv M) ->
-              Dep.Repository.Memory.make Data.Model.lastUpdated ref env & \case
+              Dep.Repository.Memory.make Data.Model.lastUpdated conf ref env & \case
                 -- https://twitter.com/chris__martin/status/1586066539039453185
                 (launcher, repo@Repository {withResource}) ->
                   repo

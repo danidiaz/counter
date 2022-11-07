@@ -1,5 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE NumDecimals #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DataKinds #-}
@@ -43,6 +45,16 @@ import Control.Monad
 import Dep.Clock
 import Data.Time.Clock
 import Control.Concurrent (threadDelay)
+import GHC.Generics (Generic)
+import Data.Aeson
+
+data Conf = Conf
+  { checkIntervalSeconds :: Int,
+    staleAfterSeconds :: Int
+  }
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
 
 alloc :: MonadIO m => m (IORef (Map k v))
 alloc = liftIO $ newIORef Map.empty
@@ -57,16 +69,17 @@ make ::
     Ord rid
   ) =>
   (resource -> UTCTime) ->
+  Conf -> 
   IORef (Map rid resource) ->
   deps ->
   (ContT () m (), Repository rid resource m)
-make getLastUpdated ref (Call φ) =
+make getLastUpdated Conf {checkIntervalSeconds, staleAfterSeconds} ref (Call φ) =
   ( let activity = forever do
-          liftIO $ threadDelay 10e6
+          liftIO $ threadDelay (checkIntervalSeconds*1e6)
           φ log Debug "Cleaning stale entries..."
           now <- φ getNow
           let notStale (getLastUpdated -> lastUpdated) = 
-                diffUTCTime now lastUpdated < secondsToNominalDiffTime 30
+                diffUTCTime now lastUpdated < secondsToNominalDiffTime (fromIntegral staleAfterSeconds)
           liftIO do atomicModifyIORef' ref (\m -> (Map.filter notStale m, ()))
      in ContT \f -> do
           runInIO <- askRunInIO
