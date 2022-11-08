@@ -57,6 +57,10 @@ Log messages look like this. Notice they include the [names](https://www.tweag.i
     [(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] withExistingResource
     [(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] withResource
 
+Counters that haven't been updated in a period of time (specified in the
+configuration file) are deleted. This is just an excuse for playing with
+asynchronous actions.
+
 Why so overengineered?
 ----------------------
 
