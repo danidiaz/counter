@@ -23,6 +23,8 @@ import Dep.Knob.IORef qualified
 import Dep.Logger
 import GHC.Generics (Generic)
 import Servant.Server.HandlerContext
+import Prelude hiding (log)
+import Data.Typeable (typeRepTyCon)
 
 newtype Conf = Conf
   { minimumLevel :: LogLevel
@@ -73,10 +75,15 @@ make ::
   ) =>
   m Conf ->
   Logger m
-make askConf =
-    Logger \level message -> do
-      Conf {minimumLevel} <- askConf
-      when (level >= minimumLevel) do
-        context <- view handlerContext
-        liftIO $ putStrLn $ show (reverse context) ++ " " ++ message
-        pure ()
+make askConf = do
+  let logFor = \mrep level message -> do
+        Conf {minimumLevel} <- askConf
+        when (level >= minimumLevel) do
+          context <- view handlerContext
+          let mtyCon = typeRepTyCon <$> mrep
+          liftIO $ putStrLn $ show (reverse context) ++ " " ++ show mtyCon ++ " - " ++ message
+          pure ()
+  Logger {
+    log = logFor Nothing,
+    logFor
+  }

@@ -57,11 +57,11 @@ import Dep.Env
     DemotableFieldNames,
     FieldsFindableByType,
     Identity (Identity),
-    Phased,
+    Phased (traverseH),
     fixEnv,
     fromBare,
     mapPhaseWithFieldNames,
-    pullPhase,
+    pullPhase, AccumConstructor, fixEnvAccum, mapPhase, toBare,
   )
 import Dep.Has (Has (dep))
 import Dep.Has.Call
@@ -77,6 +77,8 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
+import Data.Proxy
+import Data.Typeable
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -210,22 +212,22 @@ instance HasHandlerContext Env where
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
---
--- move these definitions to Dep.Env if they prove useful.
-type AccumConstructor (w :: Type) (env :: Type) = (->) (w, env) `Compose` (,) w `Compose` Identity
-
-fixEnvAccum ::
-  (Phased env_, Typeable env_, Typeable m, Monoid w, Typeable w) =>
-  -- | Environment where each field is wrapped in a 'Constructor'
-  env_ (AccumConstructor w (env_ Identity m)) m ->
-  -- | Fully constructed environment, ready for use.
-  (w, env_ Identity m)
-fixEnvAccum env =
-  let f = pullPhase <$> pullPhase env
-   in fix f
-
---
---
+-- Think about how to make this function more general, less tied to the concrete
+-- environment, so that it can be put in a library.
+installNamedLogger :: forall x m . Typeable x => 
+  AccumConstructor (Accumulator m) (FinalDepEnv m) x ->
+  Identity (AccumConstructor (Accumulator m) (FinalDepEnv m) x)
+installNamedLogger f = 
+  let 
+      f' = toBare f 
+      f'' accEnv = f' (fmap tweakEnv accEnv)
+      f''' = fromBare f''
+      tweakEnv :: FinalDepEnv m -> FinalDepEnv m
+      tweakEnv deps = deps { _logger = deps & _logger <&> tweakLogger }
+      tweakLogger :: Logger m -> Logger m
+      tweakLogger Logger { logFor } = Logger { log = logFor (Just tyRep), logFor }
+      tyRep = typeRep (Proxy @x) 
+   in Identity f'''
 
 main :: IO ()
 main = do
@@ -237,7 +239,8 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let ((launchers, _), wired :: FinalDepEnv M) = fixEnvAccum constructors
+        let Identity namedLoggers = traverseH installNamedLogger constructors
+        let ((launchers, _), wired :: FinalDepEnv M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep wired
         let initialEnv =
