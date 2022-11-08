@@ -1,16 +1,15 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE NumDecimals #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NumDecimals #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
@@ -18,21 +17,30 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- | A repository implementation that uses an in-memory map.
 module Dep.Repository.Memory (alloc, make) where
 
+import Control.Applicative
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
+import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.IO.Unlift
 import Control.Monad.Trans.Cont
+import Data.Aeson
 import Data.IORef
 import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Time (UTCTime, diffUTCTime)
+import Data.Time.Clock
 import Data.Tuple (swap)
+import Dep.Clock
 import Dep.Has
 import Dep.Has.Call
+import Dep.Knob
+import Dep.Knob.IORef qualified
 import Dep.Logger (LogLevel (..), Logger (log))
 import Dep.Repository
   ( Missing (Missing),
@@ -40,16 +48,8 @@ import Dep.Repository
     RunWithExistingResource (RunWithExistingResource),
     RunWithResource (..),
   )
-import Prelude hiding (log)
-import Control.Monad
-import Dep.Clock
-import Data.Time.Clock
-import Control.Concurrent (threadDelay)
 import GHC.Generics (Generic)
-import Data.Aeson
-import Control.Applicative
-import Dep.Knob
-import Dep.Knob.IORef qualified
+import Prelude hiding (log)
 
 data Conf = Conf
   { checkIntervalSeconds :: Int,
@@ -73,24 +73,24 @@ make ::
     Ord rid
   ) =>
   (resource -> UTCTime) ->
-  m Conf -> 
+  m Conf ->
   MapRef rid resource ->
   deps ->
   (ContT () m (), Repository rid resource m)
 make getLastUpdated askConf mapRef (Call φ) =
-  (
-    let activity = forever do
-          Conf {checkIntervalSeconds} <- askConf
-          liftIO $ threadDelay (checkIntervalSeconds*1e6)
-          φ log Debug "Cleaning stale entries..."
-          now <- φ getNow
-          Conf {staleAfterSeconds} <- askConf
-          let notStale (getLastUpdated -> lastUpdated) = 
-                diffUTCTime now lastUpdated < secondsToNominalDiffTime (fromIntegral staleAfterSeconds)
-          liftIO do atomicModifyIORef' mapRef (\m -> (Map.filter notStale m, ()))
-     in ContT \f -> do
-          runInIO <- askRunInIO
-          liftIO $ withAsync (runInIO activity) \_ -> runInIO (f ()),
+  ( do
+      let activity = forever do
+            Conf {checkIntervalSeconds} <- askConf
+            liftIO $ threadDelay (checkIntervalSeconds * 1e6)
+            φ log Debug "Cleaning stale entries..."
+            now <- φ getNow
+            Conf {staleAfterSeconds} <- askConf
+            let notStale (getLastUpdated -> lastUpdated) =
+                  diffUTCTime now lastUpdated < secondsToNominalDiffTime (fromIntegral staleAfterSeconds)
+            liftIO do atomicModifyIORef' mapRef (\m -> (Map.filter notStale m, ()))
+      ContT \f -> do
+        runInIO <- askRunInIO
+        liftIO $ withAsync (runInIO activity) \_ -> runInIO (f ()),
     do
       let withResource k = do
             φ log Debug "withResource"
@@ -113,8 +113,8 @@ make getLastUpdated askConf mapRef (Call φ) =
                   Just x ->
                     let (b, mr) = callback x
                      in (Right b, mr)
-       in Repository
-            { withResource,
-              withExistingResource
-            }
+      Repository
+        { withResource,
+          withExistingResource
+        }
   )
