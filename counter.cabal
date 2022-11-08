@@ -40,6 +40,7 @@ library lib-counter
                       Dep.Has.Call
                       Dep.Conf
                       Dep.Knob
+                      Dep.Knob.IORef
                       Dep.Knob.API
                       Dep.Knob.Server
                       Dep.Clock
@@ -62,5 +63,5 @@ library lib-counter
         uuid                               >= 1.3.15 && < 1.4,
         yaml                               >= 0.11.8 && < 0.12,
         time                               >= 1.11.1 && < 1.12,
-        async,
-        unliftio-core,
+        async                              >= 2.2.4 && < 2.3,
+        unliftio-core                      >= 0.2.0 && < 0.3,

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
@@ -18,6 +19,7 @@ import Data.IORef
 import Dep.Has
 import Dep.Has.Call
 import Dep.Knob
+import Dep.Knob.IORef qualified
 import Dep.Logger
 import GHC.Generics (Generic)
 import Servant.Server.HandlerContext
@@ -53,9 +55,9 @@ instance ToJSON Conf where
           Fatal -> "fatal"
      in object [("minimumLevel", String levelString)]
 
-type State = IORef Conf
+type Refs = IORef Conf
 
-alloc :: MonadIO m => Conf -> m State
+alloc :: MonadIO m => Conf -> m Refs
 alloc conf = liftIO $ newIORef conf
 
 -- | Notice that *none* of the components in @Counter.Model@ has a
@@ -70,14 +72,10 @@ make ::
     HasHandlerContext env
   ) =>
   Conf ->
-  State ->
+  Refs ->
   (Knob Conf m, Logger m)
 make conf ref =
-  ( Knob
-      { resetKnob = liftIO $ writeIORef ref conf,
-        setKnob = \newConf -> liftIO $ writeIORef ref newConf,
-        inspectKnob = liftIO $ readIORef ref
-      },
+  ( Dep.Knob.IORef.make conf ref,
     Logger \level message -> do
       Conf {minimumLevel} <- liftIO $ readIORef ref
       when (level >= minimumLevel) do

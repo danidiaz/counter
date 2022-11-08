@@ -47,6 +47,9 @@ import Data.Time.Clock
 import Control.Concurrent (threadDelay)
 import GHC.Generics (Generic)
 import Data.Aeson
+import Control.Applicative
+import Dep.Knob
+import Dep.Knob.IORef qualified
 
 data Conf = Conf
   { checkIntervalSeconds :: Int,
@@ -55,9 +58,10 @@ data Conf = Conf
   deriving stock (Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
+type Refs conf rid resource = (IORef conf, IORef (Map rid resource))
 
-alloc :: MonadIO m => m (IORef (Map k v))
-alloc = liftIO $ newIORef Map.empty
+alloc :: MonadIO m => Conf -> m (Refs Conf rid resource)
+alloc conf = liftIO $ liftA2 (,) (newIORef conf) (newIORef Map.empty)
 
 make ::
   ( MonadUnliftIO m,
@@ -70,17 +74,20 @@ make ::
   ) =>
   (resource -> UTCTime) ->
   Conf -> 
-  IORef (Map rid resource) ->
+  Refs Conf rid resource ->
   deps ->
-  (ContT () m (), Repository rid resource m)
-make getLastUpdated Conf {checkIntervalSeconds, staleAfterSeconds} ref (Call φ) =
-  ( let activity = forever do
+  (Knob Conf m, ContT () m (), Repository rid resource m)
+make getLastUpdated conf (confRef, mapRef) (Call φ) =
+  ( Dep.Knob.IORef.make conf confRef,
+    let activity = forever do
+          Conf {checkIntervalSeconds} <- liftIO $ readIORef confRef
           liftIO $ threadDelay (checkIntervalSeconds*1e6)
           φ log Debug "Cleaning stale entries..."
           now <- φ getNow
+          Conf {staleAfterSeconds} <- liftIO $ readIORef confRef
           let notStale (getLastUpdated -> lastUpdated) = 
                 diffUTCTime now lastUpdated < secondsToNominalDiffTime (fromIntegral staleAfterSeconds)
-          liftIO do atomicModifyIORef' ref (\m -> (Map.filter notStale m, ()))
+          liftIO do atomicModifyIORef' mapRef (\m -> (Map.filter notStale m, ()))
      in ContT \f -> do
           runInIO <- askRunInIO
           liftIO $ withAsync (runInIO activity) \_ -> runInIO (f ()),
@@ -89,7 +96,7 @@ make getLastUpdated Conf {checkIntervalSeconds, staleAfterSeconds} ref (Call φ)
             φ log Debug "withResource"
             pure $
               RunWithResource \callback -> do
-                liftIO do atomicModifyIORef' ref (swap . Map.alterF callback k)
+                liftIO do atomicModifyIORef' mapRef (swap . Map.alterF callback k)
           withExistingResource k = do
             φ log Debug "withExistingResource"
             -- Here we use a version of withResource taken from the

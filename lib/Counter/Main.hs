@@ -125,24 +125,24 @@ depEnv =
           underField "logger" <&> \conf ->
             Dep.Logger.HandlerAware.alloc conf <&> \ref ~(_, _ :: FinalDepEnv M) ->
               Dep.Logger.HandlerAware.make conf ref & \case
-                (loggerKnob, logger) ->
+                (knob, logger) ->
                   logger
-                    & (,) (mempty, knobNamed "logger" loggerKnob),
+                    & (,) (mempty, knobNamed "logger" knob),
       _counterRepository =
         fromBare $
           underField "repository" <&> \conf ->
-            Dep.Repository.Memory.alloc <&> \ref ~(_, env :: FinalDepEnv M) ->
-              Dep.Repository.Memory.make Data.Model.lastUpdated conf ref env & \case
+            Dep.Repository.Memory.alloc conf <&> \ref ~(_, deps :: FinalDepEnv M) ->
+              Dep.Repository.Memory.make Data.Model.lastUpdated conf ref deps & \case
                 -- https://twitter.com/chris__martin/status/1586066539039453185
-                (launcher, repo@Repository {withResource}) ->
+                (knob, launcher, repo@Repository {withResource}) ->
                   repo
                     { withResource =
                         withResource -- Here we instrument a single method
-                          & advise (logExtraMessage env "Extra log message added by instrumentation")
+                          & advise (logExtraMessage deps "Extra log message added by instrumentation")
                     }
                     -- Here we add additional instrumentation for all the methods in the component.
-                    & adviseRecord @Top @Top (\_ -> logExtraMessage env "Applies to all methods.")
-                    & (,) ([launcher], mempty),
+                    & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
+                    & (,) ([launcher], knobNamed "repository" knob),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -164,8 +164,8 @@ depEnv =
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
         purePhases $
-          noAccum \env ->
-            makeServantServer env & \case
+          noAccum \deps ->
+            makeServantServer deps & \case
               servantServer@(ServantServer {server}) ->
                 servantServer {server = addHandlerContext [] server},
       _knobServer = purePhases \ ~((_, knobs), _) -> (mempty, makeKnobServer knobs),
@@ -173,7 +173,7 @@ depEnv =
         fromBare $
           underField "runner" <&> \conf ->
             noAlloc <&> \() ->
-              noAccum \env -> makeServantRunner conf env
+              noAccum \deps -> makeServantRunner conf deps
     }
   where
     noAlloc :: ContT () IO ()
