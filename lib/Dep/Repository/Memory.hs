@@ -58,10 +58,10 @@ data Conf = Conf
   deriving stock (Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
-type Refs conf rid resource = (IORef conf, IORef (Map rid resource))
+type MapRef rid resource = IORef (Map rid resource)
 
-alloc :: MonadIO m => Conf -> m (Refs Conf rid resource)
-alloc conf = liftIO $ liftA2 (,) (newIORef conf) (newIORef Map.empty)
+alloc :: MonadIO n => n (MapRef rid resource)
+alloc = liftIO $ newIORef Map.empty
 
 make ::
   ( MonadUnliftIO m,
@@ -73,18 +73,18 @@ make ::
     Ord rid
   ) =>
   (resource -> UTCTime) ->
-  Conf -> 
-  Refs Conf rid resource ->
+  m Conf -> 
+  MapRef rid resource ->
   deps ->
-  (Knob Conf m, ContT () m (), Repository rid resource m)
-make getLastUpdated conf (confRef, mapRef) (Call φ) =
-  ( Dep.Knob.IORef.make conf confRef,
+  (ContT () m (), Repository rid resource m)
+make getLastUpdated askConf mapRef (Call φ) =
+  (
     let activity = forever do
-          Conf {checkIntervalSeconds} <- liftIO $ readIORef confRef
+          Conf {checkIntervalSeconds} <- askConf
           liftIO $ threadDelay (checkIntervalSeconds*1e6)
           φ log Debug "Cleaning stale entries..."
           now <- φ getNow
-          Conf {staleAfterSeconds} <- liftIO $ readIORef confRef
+          Conf {staleAfterSeconds} <- askConf
           let notStale (getLastUpdated -> lastUpdated) = 
                 diffUTCTime now lastUpdated < secondsToNominalDiffTime (fromIntegral staleAfterSeconds)
           liftIO do atomicModifyIORef' mapRef (\m -> (Map.filter notStale m, ()))

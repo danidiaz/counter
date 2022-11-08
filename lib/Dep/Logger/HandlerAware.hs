@@ -71,15 +71,12 @@ make ::
     MonadReader env m,
     HasHandlerContext env
   ) =>
-  Conf ->
-  Refs ->
-  (Knob Conf m, Logger m)
-make conf ref =
-  ( Dep.Knob.IORef.make conf ref,
+  m Conf ->
+  Logger m
+make askConf =
     Logger \level message -> do
-      Conf {minimumLevel} <- liftIO $ readIORef ref
+      Conf {minimumLevel} <- askConf
       when (level >= minimumLevel) do
         context <- view handlerContext
         liftIO $ putStrLn $ show (reverse context) ++ " " ++ message
         pure ()
-  )

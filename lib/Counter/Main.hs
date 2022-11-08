@@ -24,6 +24,7 @@
 
 module Counter.Main where
 
+import Control.Applicative
 import Control.Arrow (Kleisli (..))
 import Control.Monad.IO.Class
 import Control.Monad.Reader
@@ -64,6 +65,8 @@ import Dep.Env
   )
 import Dep.Has (Has (dep))
 import Dep.Has.Call
+import Dep.Knob
+import Dep.Knob.IORef
 import Dep.Knob.Server
 import Dep.Logger
 import Dep.Logger.HandlerAware
@@ -123,18 +126,16 @@ depEnv =
       _logger =
         fromBare $
           underField "logger" <&> \conf ->
-            Dep.Logger.HandlerAware.alloc conf <&> \ref ~(_, _ :: FinalDepEnv M) ->
-              Dep.Logger.HandlerAware.make conf ref & \case
-                (knob, logger) ->
-                  logger
-                    & (,) (mempty, knobNamed "logger" knob),
+            Dep.Knob.IORef.allocMake conf <&> \knob ~(_, _ :: FinalDepEnv M) ->
+              Dep.Logger.HandlerAware.make (inspectKnob knob)
+                & (,) (mempty, knobNamed "logger" knob),
       _counterRepository =
         fromBare $
           underField "repository" <&> \conf ->
-            Dep.Repository.Memory.alloc conf <&> \ref ~(_, deps :: FinalDepEnv M) ->
-              Dep.Repository.Memory.make Data.Model.lastUpdated conf ref deps & \case
+            liftA2 (,) (Dep.Knob.IORef.allocMake conf) Dep.Repository.Memory.alloc <&> \(knob, mapRef) ~(_, deps :: FinalDepEnv M) ->
+              Dep.Repository.Memory.make Data.Model.lastUpdated (inspectKnob knob) mapRef deps & \case
                 -- https://twitter.com/chris__martin/status/1586066539039453185
-                (knob, launcher, repo@Repository {withResource}) ->
+                (launcher, repo@Repository {withResource}) ->
                   repo
                     { withResource =
                         withResource -- Here we instrument a single method
