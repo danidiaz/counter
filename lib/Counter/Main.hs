@@ -126,31 +126,31 @@ depEnv =
       _logger =
         fromBare $
           underField "logger" <&> \conf ->
-            do knobRef <- Dep.Knob.IORef.alloc conf 
-               pure $ Dep.Knob.IORef.make conf knobRef
-            <&> \knob ~(_, _ :: FinalDepEnv M) ->
-              Dep.Logger.HandlerAware.make (inspectKnob knob)
-                & (,) (mempty, knobNamed "logger" knob),
+            do
+              knobRef <- Dep.Knob.IORef.alloc conf
+              pure $ Dep.Knob.IORef.make conf knobRef
+              <&> \knob ~(_, _ :: FinalDepEnv M) ->
+                Dep.Logger.HandlerAware.make (inspectKnob knob)
+                  & (,) (mempty, knobNamed "logger" knob),
       _counterRepository =
         fromBare $
           underField "repository" <&> \conf ->
             do
-                knobRef <- Dep.Knob.IORef.alloc conf
-                mapRef <- Dep.Repository.Memory.alloc
-                pure (Dep.Knob.IORef.make conf knobRef, mapRef)
-           
-              <&> \(knob, mapRef) ~(_, deps :: FinalDepEnv M) ->
-                Dep.Repository.Memory.make Data.Model.lastUpdated (inspectKnob knob) mapRef deps & \case
-                  -- https://twitter.com/chris__martin/status/1586066539039453185
-                  (launcher, repo@Repository {withResource}) ->
-                    repo
-                      { withResource =
-                          withResource -- Here we instrument a single method
-                            & advise (logExtraMessage deps "Extra log message added by instrumentation")
-                      }
-                      -- Here we add additional instrumentation for all the methods in the component.
-                      & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
-                      & (,) ([launcher], knobNamed "repository" knob),
+              knobRef <- Dep.Knob.IORef.alloc conf
+              mapRef <- Dep.Repository.Memory.alloc
+              pure (Dep.Knob.IORef.make conf knobRef, mapRef)
+            <&> \(knob, mapRef) ~(_, deps :: FinalDepEnv M) ->
+              Dep.Repository.Memory.make Data.Model.lastUpdated (inspectKnob knob) mapRef deps & \case
+                -- https://twitter.com/chris__martin/status/1586066539039453185
+                (launcher, repo@Repository {withResource}) ->
+                  repo
+                    { withResource =
+                        withResource -- Here we instrument a single method
+                          & advise (logExtraMessage deps "Extra log message added by instrumentation")
+                    }
+                    -- Here we add additional instrumentation for all the methods in the component.
+                    & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
+                    & (,) ([launcher], knobNamed "repository" knob),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of

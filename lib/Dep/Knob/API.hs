@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 -- | A Servant API type for exposing the controls of a 'Knob'.
-module Dep.Knob.API (KnobCollectionAPI, KnobName, KnobAPI(..)) where
+module Dep.Knob.API (KnobCollectionAPI (..), KnobName, KnobAPI(..)) where
 
 import Data.Aeson (FromJSON, ToJSON, Value)
 import Data.Text
@@ -19,7 +19,13 @@ import Servant.API
 import Servant.API.Generic (Generic, GenericMode (type (:-)))
 import Dep.Knob (Knob)
 
-type KnobCollectionAPI = Capture "knobName" KnobName :> NamedRoutes KnobAPI
+-- type KnobCollectionAPI = Capture "knobName" KnobName :> NamedRoutes KnobAPI
+
+data KnobCollectionAPI mode = KnobCollectionAPI
+  { knobs :: mode :- Capture "knobId" KnobName :> NamedRoutes KnobAPI,
+    allKnobs :: mode :- Get '[JSON] Value
+  }
+  deriving stock (Generic)
 
 data KnobAPI mode = KnobAPI
   { inspectKnob :: mode :- Get '[JSON] Value,

@@ -61,7 +61,7 @@ import Dep.Logger (Logger)
 type FullAPI = 
     API
     :<|>
-    BasicAuth "bar-realm" User :> "knob" :> KnobCollectionAPI 
+    BasicAuth "bar-realm" User :> "knob" :> NamedRoutes KnobCollectionAPI 
 
 --
 -- AUTHENTICATION
