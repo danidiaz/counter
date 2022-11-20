@@ -50,14 +50,14 @@ instance Rubric JSONLocal where
 
 instance Aliased JSONLocal LogLevel where
   aliases =
-    aliasListBegin 
-    $ alias @"Trace" "trace" 
-    $ alias @"Debug" "debug" 
-    $ alias @"Info" "info" 
-    $ alias @"Warn" "warn" 
-    $ alias @"Error" "error" 
-    $ alias @"Fatal" "fatal" 
-    $ aliasListEnd
+    aliasListBegin
+      . alias @"Trace" "trace"
+      . alias @"Debug" "debug"
+      . alias @"Info" "info"
+      . alias @"Warn" "warn"
+      . alias @"Error" "error"
+      . alias @"Fatal" "fatal"
+      $ aliasListEnd
 
 type Refs = IORef Conf
 
