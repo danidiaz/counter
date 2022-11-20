@@ -48,7 +48,6 @@ library lib-counter
     hs-source-dirs:   lib
     build-depends:    
         aeson                              >= 2.0.3,
-        base                               >= 4.16.3 && < 4.17,
         containers                         >= 0.6.5,
         bytestring                         >= 0.11.3,
         mtl                                >= 2.2.2,
@@ -65,3 +64,4 @@ library lib-counter
         time                               >= 1.11.1,
         async                              >= 2.2.4,
         unliftio-core                      >= 0.2.0 && < 0.3,
+        by-other-names                     >= 1.2.2.0,

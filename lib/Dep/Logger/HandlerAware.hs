@@ -1,21 +1,29 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- A Logger implementation that is aware of the current Servant handler.
 module Dep.Logger.HandlerAware (Conf (..), make, alloc) where
 
+import ByOtherNames
+import ByOtherNames.Aeson (GeneralJSONEnum (..))
 import Control.Lens
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Aeson (FromJSON (..), ToJSON (..), Value (..), withObject, (.:))
-import Data.Aeson.Types (object)
+import Data.Aeson.Types (Key, object)
 import Data.IORef
+import Data.Typeable (typeRepTyCon)
 import Dep.Has
 import Dep.Has.Call
 import Dep.Knob
@@ -24,38 +32,32 @@ import Dep.Logger
 import GHC.Generics (Generic)
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
-import Data.Typeable (typeRepTyCon)
 
 newtype Conf = Conf
-  { minimumLevel :: LogLevel
+  { minimumLevel :: LocalLogLevel
   }
   deriving stock (Show, Generic)
+  deriving anyclass (FromJSON, ToJSON)
 
--- Repeating the names of each branch in FromJSON and ToJSON is awful,
--- but let's go with it for now.
-instance FromJSON Conf where
-  parseJSON = withObject "Conf" \o -> do
-    levelValue <- o .: "minimumLevel"
-    minimumLevel <- case levelValue of
-      String "trace" -> pure Trace
-      String "debug" -> pure Debug
-      String "info" -> pure Info
-      String "warn" -> pure Warn
-      String "error" -> pure Error
-      String "fatal" -> pure Fatal
-      _ -> fail "unknown level"
-    pure $ Conf {minimumLevel}
+newtype LocalLogLevel = LocalLogLevel {confLevel :: LogLevel}
+  deriving (Show)
+  deriving (FromJSON, ToJSON) via GeneralJSONEnum JSONLocal LogLevel
 
-instance ToJSON Conf where
-  toJSON (Conf {minimumLevel}) =
-    let levelString = case minimumLevel of
-          Trace -> "trace"
-          Debug -> "debug"
-          Info -> "info"
-          Warn -> "warn"
-          Error -> "error"
-          Fatal -> "fatal"
-     in object [("minimumLevel", String levelString)]
+data JSONLocal
+
+instance Rubric JSONLocal where
+  type AliasType JSONLocal = Key
+
+instance Aliased JSONLocal LogLevel where
+  aliases =
+    aliasListBegin 
+    $ alias @"Trace" "trace" 
+    $ alias @"Debug" "debug" 
+    $ alias @"Info" "info" 
+    $ alias @"Warn" "warn" 
+    $ alias @"Error" "error" 
+    $ alias @"Fatal" "fatal" 
+    $ aliasListEnd
 
 type Refs = IORef Conf
 
@@ -77,13 +79,13 @@ make ::
   Logger m
 make askConf = do
   let logFor = \mrep level message -> do
-        Conf {minimumLevel} <- askConf
-        when (level >= minimumLevel) do
+        Conf {minimumLevel = LocalLogLevel {confLevel}} <- askConf
+        when (level >= confLevel) do
           context <- view handlerContext
           let mtyCon = typeRepTyCon <$> mrep
           liftIO $ putStrLn $ show (reverse context) ++ " " ++ show mtyCon ++ " - " ++ message
           pure ()
-  Logger {
-    log = logFor Nothing,
-    logFor
-  }
+  Logger
+    { log = logFor Nothing,
+      logFor
+    }
