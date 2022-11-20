@@ -34,12 +34,12 @@ import Servant.Server.HandlerContext
 import Prelude hiding (log)
 
 newtype Conf = Conf
-  { minimumLevel :: LocalLogLevel
+  { minimumLevel :: ConfLogLevel
   }
   deriving stock (Show, Generic)
   deriving anyclass (FromJSON, ToJSON)
 
-newtype LocalLogLevel = LocalLogLevel {confLevel :: LogLevel}
+newtype ConfLogLevel = ConfLogLevel {confLevel :: LogLevel}
   deriving (Show)
   deriving (FromJSON, ToJSON) via GeneralJSONEnum JSONLocal LogLevel
 
@@ -79,7 +79,7 @@ make ::
   Logger m
 make askConf = do
   let logFor = \mrep level message -> do
-        Conf {minimumLevel = LocalLogLevel {confLevel}} <- askConf
+        Conf {minimumLevel = ConfLogLevel {confLevel}} <- askConf
         when (level >= confLevel) do
           context <- view handlerContext
           let mtyCon = typeRepTyCon <$> mrep
