@@ -83,7 +83,14 @@ make askConf = do
         when (level >= confLevel) do
           context <- view handlerContext
           let mtyCon = typeRepTyCon <$> mrep
-          liftIO $ putStrLn $ show (reverse context) ++ " " ++ show mtyCon ++ " - " ++ message
+          liftIO $
+            putStrLn $
+              "endpoint="
+                ++ show (reverse context)
+                ++ " component="
+                ++ maybe "none" show mtyCon
+                ++ " - "
+                ++ message
           pure ()
   Logger
     { log = logFor Nothing,

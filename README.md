@@ -51,17 +51,28 @@ These curls control the logger:
     --url http://localhost:8000/knob/logger \
     -v -u "user:password"
 
-Log messages look like this. Notice they include the [names](https://www.tweag.io/blog/2022-02-24-named-routes/) of the servant handlers.
+Log messages look like this. Notice they include the [names](https://www.tweag.io/blog/2022-02-24-named-routes/) of the Servant handlers, as well as the component which emitted the message:
 
-    [nix-shell:~/counter]$ cabal run
-    [(CounterCollectionAPI,"create")] withResource
-    [(CounterCollectionAPI,"counters"),(CounterAPI,"increase")] withExistingResource
-    [(CounterCollectionAPI,"counters"),(CounterAPI,"increase")] withResource
-    [(CounterCollectionAPI,"counters"),(CounterAPI,"query")] withExistingResource
-    [(CounterCollectionAPI,"counters"),(CounterAPI,"query")] withResource
-    [(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] Requesting counter deletion CounterId cbb1eb12-66d0-42f3-9776-6c756713d281
-    [(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] withExistingResource
-    [(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] withResource
+    endpoint=[(CounterCollectionAPI,"create")] component=Repository - Applies to all methods.
+    endpoint=[(CounterCollectionAPI,"create")] component=Repository - Extra log message added by instrumentation
+    endpoint=[(CounterCollectionAPI,"create")] component=Repository - withResource
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"increase")] component=Repository - Applies to all methods.
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"increase")] component=Repository - withExistingResource
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"increase")] component=Repository - Applies to all methods.
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"increase")] component=Repository - Extra log message added by instrumentation
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"increase")] component=Repository - withResource
+    endpoint=[] component=Repository - Cleaning stale entries...
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"query")] component=Repository - Applies to all methods.
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"query")] component=Repository - withExistingResource
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"query")] component=Repository - Applies to all methods.
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"query")] component=Repository - Extra log message added by instrumentation
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"query")] component=Repository - withResource
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] component=DeleteCounter - Requesting counter deletion CounterId dfabbdc2-8714-42f7-a22e-1dc9ed840ed9
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] component=Repository - Applies to all methods.
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] component=Repository - withExistingResource
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] component=Repository - Applies to all methods.
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] component=Repository - Extra log message added by instrumentation
+    endpoint=[(CounterCollectionAPI,"counters"),(CounterAPI,"delete")] component=Repository - withResource
 
 Counters that haven't been updated in a period of time (specified in the
 configuration file) are deleted. This is just an excuse for playing with
