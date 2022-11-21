@@ -91,11 +91,11 @@ I wanted to scratch the following itches:
             - Adding `BazCache` to `Bar` and then having to update the signatures of a zillion clients of `Bar`, and of client's clients, is not my idea of fun.
     - I'm using my own library [dep-t](https://hackage.haskell.org/package/dep-t).
 
-- For each logging message emitted *by the model*, I want to print the Servant handler (the handler field name) resposible for triggering it.
+- For each log message emitted *by the model*, I want to print the Servant handler (the handler field name) resposible for triggering it.
     - BUT! Components in the model *should know nothing about handlers, or Servant*. 
         - Only the logger component is allowed to know that handlers exist.
 
-- I aslo want to tag each logging message with the componnet that emitted it.
+- I aslo want to tag each log message with the component that emitted it.
 Preferably, this should be done automatically.
 
 - Each component should be in charge of parsing its *own* piece of the
