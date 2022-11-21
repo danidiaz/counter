@@ -24,6 +24,12 @@ This is a trivial REST API which provides counters. Some example curls:
 
 There's no persistence, counters are kept in a map in memory.
 
+This curl gives a global view of all components with "control" endpoints:
+
+    curl --request GET \
+    --url http://localhost:8000/knob \
+    -v -u "user:password"
+
 These curls control the logger:
 
     # Get current state of the logger
@@ -104,3 +110,6 @@ Links
 - [How to Haskell: Sharing Data Types is Tight Coupling](https://leapyear.io/resources/blog-posts/how-to-haskell-sharing-data-types-is-tight-coupling/). [tweet](https://twitter.com/DiazCarrete/status/1570487241755197440).
 
 - [Mapped Diagnostic Context in Java's Logback logging framework](https://logback.qos.ch/manual/mdc.html)
+
+- [Handle pattern with servant to build flexible web-apps in Haskell](https://www.reddit.com/r/haskell/comments/z13xvj/tutorial_handle_pattern_with_servant_to_build/) Another "toy" project for demostrating app architecture ideas.
+
