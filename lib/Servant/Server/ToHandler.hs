@@ -62,27 +62,21 @@ class
     (modelErrors :: [Type])
     modelSuccess
     modelResult
-    modelTip
     model
     (handlerArgs :: [Type])
     handlerSuccess
-    handlerTip
     handler
     env
-    | model -> modelArgs modelTip,
-      modelTip -> modelResult env,
+    | model -> modelArgs modelResult env,
       modelResult -> modelErrors modelSuccess,
-      handler -> handlerArgs handlerTip,
-      handlerTip -> handlerSuccess env
+      handler -> handlerArgs handlerSuccess env
   where
   toHandler :: model -> handler
 
 instance
-  ( Multicurryable (->) modelArgs modelTip model,
-    modelTip ~ ReaderT env IO modelResult,
+  ( Multicurryable (->) modelArgs (ReaderT env IO modelResult) model,
     Multicurryable Either modelErrors modelSuccess modelResult,
-    Multicurryable (->) handlerArgs handlerTip handler,
-    handlerTip ~ ReaderT env Handler handlerSuccess,
+    Multicurryable (->) handlerArgs (ReaderT env Handler handlerSuccess) handler,
     --
     AllZip (Convertible mark) handlerArgs modelArgs,
     All (ToServerError mark) modelErrors,
@@ -94,23 +88,21 @@ instance
     (modelErrors :: [Type])
     modelSuccess
     modelResult
-    modelTip
     model
     (handlerArgs :: [Type])
     handlerSuccess
-    handlerTip
     handler
     env
   where
   toHandler model =
-    multicurry @(->) @handlerArgs @handlerTip $ \handlerArgs ->
+    multicurry @(->) @handlerArgs $ \handlerArgs ->
       let modelArgs :: NP I modelArgs
           modelArgs =
             trans_NP
               (Proxy @(Convertible mark))
               (\(I x) -> I (convert @mark x))
               handlerArgs
-          uncurriedModel = multiuncurry @(->) @modelArgs @modelTip model
+          uncurriedModel = multiuncurry @(->) @modelArgs model
           modelTip :: ReaderT env IO (Either (NS I modelErrors) modelSuccess)
           modelTip = multiuncurry @Either @modelErrors @modelSuccess <$> uncurriedModel modelArgs
           transformErrors :: NS I modelErrors -> ServerError
