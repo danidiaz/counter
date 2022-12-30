@@ -66,10 +66,9 @@ class
     (handlerArgs :: [Type])
     handlerSuccess
     handler
-    env
-    | model -> modelArgs modelResult env,
+    | model -> modelArgs modelResult,
       modelResult -> modelErrors modelSuccess,
-      handler -> handlerArgs handlerSuccess env
+      handler -> handlerArgs handlerSuccess
   where
   toHandler :: deps -> model -> handler
 
@@ -95,7 +94,6 @@ instance
     (handlerArgs :: [Type])
     handlerSuccess
     handler
-    env
   where
   toHandler deps model =
     multicurry @(->) @handlerArgs $ \handlerArgs ->
