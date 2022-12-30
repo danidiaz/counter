@@ -26,6 +26,8 @@
 -- in your model, in order to be able to invoke 'toHandler'.
 module Servant.Server.ToHandler
   ( ToHandler (toHandler),
+    makeHandlerConverter,
+    HandlerConverter (..),
     Convertible (convert),
     ToServerError,
     -- ToDTO(toDTO),
@@ -136,3 +138,35 @@ class Convertible mark m deps source target where
 class Convertible mark m deps source ServerError => ToServerError mark m deps source
 
 instance Convertible mark m deps source ServerError => ToServerError mark m deps source
+
+newtype HandlerConverter mark deps = HandlerConverter  {
+    toH :: 
+        forall
+          model
+          (modelArgs :: [Type])
+          modelResult
+          (modelErrors :: [Type])
+          modelSuccess
+          handler
+          (handlerArgs :: [Type])
+          handlerSuccess.
+        ToHandler
+          mark
+          deps
+          model
+          (modelArgs :: [Type])
+          modelResult
+          (modelErrors :: [Type])
+          modelSuccess
+          handler
+          (handlerArgs :: [Type])
+          handlerSuccess =>
+        model ->
+        handler
+  }
+
+makeHandlerConverter ::
+  forall mark deps.
+  deps ->
+  HandlerConverter mark deps
+makeHandlerConverter deps = HandlerConverter (toHandler @mark @deps deps)

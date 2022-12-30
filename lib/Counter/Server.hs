@@ -109,9 +109,11 @@ makeServantServer deps@(Call φ) = ServantServer
     CounterCollectionAPI
       { counters = \counterId -> do
           CounterAPI
-            { increase = toHandler @X deps (φ Model.increaseCounter) counterId,
-              query = toHandler @X deps (φ Model.getCounter) counterId,
-              delete = toHandler @X deps (φ Model.deleteCounter) counterId
+            { increase = toH (φ Model.increaseCounter) counterId,
+              query = toH (φ Model.getCounter) counterId,
+              delete = toH (φ Model.deleteCounter) counterId
             },
-        create = toHandler @X deps (φ Model.createCounter)
+        create = toH (φ Model.createCounter)
       }
+  where
+    HandlerConverter {toH} = makeHandlerConverter @X deps
