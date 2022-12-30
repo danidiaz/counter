@@ -35,6 +35,7 @@ where
 
 import Control.Monad.Except
 import Control.Monad.Reader
+import Data.Bifunctor (bimap)
 import Data.Coerce
 import Data.Kind
 import Data.SOP
@@ -45,7 +46,6 @@ import Servant.Server
   ( Handler (..),
     ServerError,
   )
-import Data.Bifunctor (bimap)
 
 -- | Converts some monadic function into something usable as a Servant handler.
 --
@@ -58,71 +58,71 @@ import Data.Bifunctor (bimap)
 class
   ToHandler
     mark
-    (modelargs :: [Type])
-    (modelerrors :: [Type])
-    modelsuccess
-    modelresult
-    modeltip
+    (modelArgs :: [Type])
+    (modelErrors :: [Type])
+    modelSuccess
+    modelResult
+    modelTip
     model
-    (handlerargs :: [Type])
-    handlersuccess
-    handlertip
+    (handlerArgs :: [Type])
+    handlerSuccess
+    handlerTip
     handler
-    runenv
-    | model -> modelargs modeltip,
-      modeltip -> modelresult runenv,
-      modelresult -> modelerrors modelsuccess,
-      handler -> handlerargs handlertip,
-      handlertip -> handlersuccess runenv
+    env
+    | model -> modelArgs modelTip,
+      modelTip -> modelResult env,
+      modelResult -> modelErrors modelSuccess,
+      handler -> handlerArgs handlerTip,
+      handlerTip -> handlerSuccess env
   where
   toHandler :: model -> handler
 
 instance
-  ( Multicurryable (->) modelargs modeltip model,
-    modeltip ~ ReaderT runenv IO modelresult,
-    Multicurryable Either modelerrors modelsuccess modelresult,
-    Multicurryable (->) handlerargs handlertip handler,
-    handlertip ~ ReaderT runenv Handler handlersuccess,
+  ( Multicurryable (->) modelArgs modelTip model,
+    modelTip ~ ReaderT env IO modelResult,
+    Multicurryable Either modelErrors modelSuccess modelResult,
+    Multicurryable (->) handlerArgs handlerTip handler,
+    handlerTip ~ ReaderT env Handler handlerSuccess,
     --
-    AllZip (Convertible mark) handlerargs modelargs,
-    All (ToServerError mark) modelerrors,
-    Convertible mark modelsuccess handlersuccess
+    AllZip (Convertible mark) handlerArgs modelArgs,
+    All (ToServerError mark) modelErrors,
+    Convertible mark modelSuccess handlerSuccess
   ) =>
   ToHandler
     mark
-    (modelargs :: [Type])
-    (modelerrors :: [Type])
-    modelsuccess
-    modelresult
-    modeltip
+    (modelArgs :: [Type])
+    (modelErrors :: [Type])
+    modelSuccess
+    modelResult
+    modelTip
     model
-    (handlerargs :: [Type])
-    handlersuccess
-    handlertip
+    (handlerArgs :: [Type])
+    handlerSuccess
+    handlerTip
     handler
-    runenv
+    env
   where
   toHandler model =
-    multicurry @(->) @handlerargs @handlertip $ \handlerargs ->
-      let modelargs :: NP I modelargs
-          modelargs =
+    multicurry @(->) @handlerArgs @handlerTip $ \handlerArgs ->
+      let modelArgs :: NP I modelArgs
+          modelArgs =
             trans_NP
               (Proxy @(Convertible mark))
               (\(I x) -> I (convert @mark x))
-              handlerargs
-          uncurriedModel = multiuncurry @(->) @modelargs @modeltip model
-          modelTip :: ReaderT runenv IO (Either (NS I modelerrors) modelsuccess)
-          modelTip = multiuncurry @Either @modelerrors @modelsuccess <$> uncurriedModel modelargs
-          transformErrors :: NS I modelerrors -> ServerError
+              handlerArgs
+          uncurriedModel = multiuncurry @(->) @modelArgs @modelTip model
+          modelTip :: ReaderT env IO (Either (NS I modelErrors) modelSuccess)
+          modelTip = multiuncurry @Either @modelErrors @modelSuccess <$> uncurriedModel modelArgs
+          transformErrors :: NS I modelErrors -> ServerError
           transformErrors errors =
             collapse_NS $
               cmap_NS
                 (Proxy @(ToServerError mark))
                 (\(I e) -> K (convert @mark e))
                 errors
-          transformSuccess :: modelsuccess -> handlersuccess
-          transformSuccess = convert @mark @modelsuccess @handlersuccess
-          handlerTip :: ReaderT runenv Handler handlersuccess
+          transformSuccess :: modelSuccess -> handlerSuccess
+          transformSuccess = convert @mark @modelSuccess @handlerSuccess
+          handlerTip :: ReaderT env Handler handlerSuccess
           handlerTip = coerce $ bimap transformErrors transformSuccess <$> modelTip
        in handlerTip
 
