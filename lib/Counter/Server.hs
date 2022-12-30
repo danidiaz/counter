@@ -40,6 +40,7 @@ import Servant.Server
       err500 )
 import Servant.Server.ToHandler
 import Control.Monad.Reader
+import Servant (ServerError)
 
 -- | This is a marker type to identify the servant API.
 -- 
@@ -48,32 +49,32 @@ import Control.Monad.Reader
 data X
 
 -- | Maps a domain-relevant error to 'ServerError'.
-instance ToServerError X Model.Missing where
-  toServerError _ = err404
+instance Convertible X Model.Missing ServerError where
+  convert _ = err404
 
 -- | Maps a domain-relevant error to 'ServerError'.
-instance ToServerError X Model.Collision where
-  toServerError _ = err500
+instance Convertible X Model.Collision ServerError where
+  convert _ = err500
 
 -- | DTO mapping.
-instance FromDTO X API.CounterId Model.CounterId where
-  fromDTO = coerce
+instance Convertible X API.CounterId Model.CounterId where
+  convert = coerce
 
 -- | DTO mapping.
-instance ToDTO X API.CounterId Model.CounterId where
-  toDTO = coerce
+instance Convertible X Model.CounterId API.CounterId where
+  convert = coerce
 
 -- | DTO mapping.
-instance ToDTO X API.Counter Model.Counter where
-  toDTO Model.Counter {Model.counterId, Model.counterValue} =
+instance Convertible X Model.Counter API.Counter where
+  convert Model.Counter {Model.counterId, Model.counterValue} =
     API.Counter
-      { API.counterId = toDTO @X counterId,
+      { API.counterId = convert @X counterId,
         API.counterValue = counterValue
       }
 
 -- | DTO mapping.
-instance ToDTO X () () where
-  toDTO = id
+instance Convertible X () () where
+  convert = id
 
 -- | The type parameters here are a bit weird compared to other components.
 --
