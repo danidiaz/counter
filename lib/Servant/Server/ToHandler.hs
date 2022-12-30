@@ -58,14 +58,14 @@ class
   ToHandler
     mark
     deps
+    model
     (modelArgs :: [Type])
+    modelResult
     (modelErrors :: [Type])
     modelSuccess
-    modelResult
-    model
+    handler
     (handlerArgs :: [Type])
     handlerSuccess
-    handler
     | model -> modelArgs modelResult,
       modelResult -> modelErrors modelSuccess,
       handler -> handlerArgs handlerSuccess
@@ -86,14 +86,14 @@ instance
   ToHandler
     mark
     deps
+    model
     (modelArgs :: [Type])
+    modelResult
     (modelErrors :: [Type])
     modelSuccess
-    modelResult
-    model
+    handler
     (handlerArgs :: [Type])
     handlerSuccess
-    handler
   where
   toHandler deps model =
     multicurry @(->) @handlerArgs $ \handlerArgs ->
