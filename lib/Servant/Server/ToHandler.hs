@@ -35,12 +35,11 @@ where
 
 import Control.Monad.Except
 import Control.Monad.Reader
-import Data.Bifunctor (bimap)
 import Data.Coerce
 import Data.Kind
 import Data.SOP
-import Data.SOP.NP (trans_NP)
-import Data.SOP.NS (cmap_NS, collapse_NS)
+import Data.SOP.NP (sequence_NP, trans_NP)
+import Data.SOP.NS (cmap_NS, collapse_NS, sequence'_NS)
 import Multicurryable
 import Servant.Server
   ( Handler (..),
@@ -58,6 +57,7 @@ import Servant.Server
 class
   ToHandler
     mark
+    deps
     (modelArgs :: [Type])
     (modelErrors :: [Type])
     modelSuccess
@@ -71,19 +71,21 @@ class
       modelResult -> modelErrors modelSuccess,
       handler -> handlerArgs handlerSuccess env
   where
-  toHandler :: model -> handler
+  toHandler :: deps -> model -> handler
 
 instance
   ( Multicurryable (->) modelArgs (ReaderT env IO modelResult) model,
     Multicurryable Either modelErrors modelSuccess modelResult,
     Multicurryable (->) handlerArgs (ReaderT env Handler handlerSuccess) handler,
     --
-    AllZip (Convertible mark) handlerArgs modelArgs,
-    All (ToServerError mark) modelErrors,
-    Convertible mark modelSuccess handlerSuccess
+    z ~ ReaderT env IO,
+    AllZip (Convertible mark z deps) handlerArgs modelArgs,
+    All (ToServerError mark z deps) modelErrors,
+    Convertible mark z deps modelSuccess handlerSuccess
   ) =>
   ToHandler
     mark
+    deps
     (modelArgs :: [Type])
     (modelErrors :: [Type])
     modelSuccess
@@ -94,36 +96,47 @@ instance
     handler
     env
   where
-  toHandler model =
+  toHandler deps model =
     multicurry @(->) @handlerArgs $ \handlerArgs ->
-      let modelArgs :: NP I modelArgs
+      let modelArgs :: z (NP I modelArgs)
           modelArgs =
-            trans_NP
-              (Proxy @(Convertible mark))
-              (\(I x) -> I (convert @mark x))
-              handlerArgs
+            sequence_NP $
+              trans_NP
+                (Proxy @(Convertible mark z deps))
+                (\(I x) -> convert @mark deps x)
+                handlerArgs
           uncurriedModel = multiuncurry @(->) @modelArgs model
-          modelTip :: ReaderT env IO (Either (NS I modelErrors) modelSuccess)
-          modelTip = multiuncurry @Either @modelErrors @modelSuccess <$> uncurriedModel modelArgs
-          transformErrors :: NS I modelErrors -> ServerError
-          transformErrors errors =
-            collapse_NS $
-              cmap_NS
-                (Proxy @(ToServerError mark))
-                (\(I e) -> K (convert @mark e))
-                errors
-          transformSuccess :: modelSuccess -> handlerSuccess
-          transformSuccess = convert @mark @modelSuccess @handlerSuccess
+          modelTip :: z (Either (NS I modelErrors) modelSuccess)
+          modelTip = do
+            args <- modelArgs
+            multiuncurry @Either @modelErrors @modelSuccess <$> uncurriedModel args
+          transformErrors :: NS I modelErrors -> z ServerError
+          transformErrors errors = do
+            mappedErrors :: NS (K ServerError) modelErrors <-
+              sequence'_NS $
+                cmap_NS
+                  (Proxy @(ToServerError mark z deps))
+                  (\(I e) -> Comp $ K <$> convert @mark deps e)
+                  errors
+            pure $ collapse_NS mappedErrors
+          transformSuccess :: modelSuccess -> z handlerSuccess
+          transformSuccess = convert @mark @z @deps @modelSuccess @handlerSuccess deps
+          transformMonad :: forall x. ReaderT env IO (Either ServerError x) -> ReaderT env Handler x
+          transformMonad = coerce
           handlerTip :: ReaderT env Handler handlerSuccess
-          handlerTip = coerce $ bimap transformErrors transformSuccess <$> modelTip
+          handlerTip = transformMonad do
+            tip <- modelTip
+            case tip of
+              Left errors -> Left <$> transformErrors errors
+              Right s -> Right <$> transformSuccess s
        in handlerTip
 
-class Convertible mark source target where
-  convert :: source -> target
+class Convertible mark m deps source target where
+  convert :: deps -> source -> m target
 
-class Convertible mark source ServerError => ToServerError mark source
+class Convertible mark m deps source ServerError => ToServerError mark m deps source
 
-instance Convertible mark source ServerError => ToServerError mark source
+instance Convertible mark m deps source ServerError => ToServerError mark m deps source
 
 -- instance (FromDTO mark a' a, ToHandler mark b b') => ToHandler mark (a -> b) (a' -> b') where
 --   toHandler f = toHandler @mark . (f . fromDTO @mark)

@@ -1,7 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -11,6 +10,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -19,62 +19,66 @@
 
 -- | This module connects the Servant API with the application's model.
 --
--- In particular, it defines some instances that help map datatypes to and fro. 
-module Counter.Server (
-  ServantServer(..),
-  makeServantServer
-) where
+-- In particular, it defines some instances that help map datatypes to and fro.
+module Counter.Server
+  ( ServantServer (..),
+    makeServantServer,
+  )
+where
 
+import Control.Monad.Reader
 import Counter.API
 import Counter.API qualified as API
 import Counter.Model
 import Counter.Model qualified as Model
 import Data.Coerce
+import Data.Kind
 import Dep.Has
 import Dep.Has.Call
-import Data.Kind
-import Servant.Server
-    ( Handler,
-      HasServer(ServerT),
-      err404,
-      err500 )
-import Servant.Server.ToHandler
-import Control.Monad.Reader
 import Servant (ServerError)
+import Servant.Server
+  ( Handler,
+    HasServer (ServerT),
+    err404,
+    err500,
+  )
+import Servant.Server.ToHandler
 
 -- | This is a marker type to identify the servant API.
--- 
+--
 -- In theory, a model could be used to serve different API's, so to avoid
 -- instance collisions we parameterize many helper typeclasses by 'X'.
 data X
 
 -- | Maps a domain-relevant error to 'ServerError'.
-instance Convertible X Model.Missing ServerError where
-  convert _ = err404
+instance Monad m => Convertible X m deps Model.Missing ServerError where
+  convert _ _ = pure err404
 
 -- | Maps a domain-relevant error to 'ServerError'.
-instance Convertible X Model.Collision ServerError where
-  convert _ = err500
+instance Monad m => Convertible X m deps Model.Collision ServerError where
+  convert _ _ = pure err500
 
 -- | DTO mapping.
-instance Convertible X API.CounterId Model.CounterId where
-  convert = coerce
+instance Monad m => Convertible X m deps API.CounterId Model.CounterId where
+  convert _ x = pure $ coerce x
 
 -- | DTO mapping.
-instance Convertible X Model.CounterId API.CounterId where
-  convert = coerce
+instance Monad m => Convertible X m deps Model.CounterId API.CounterId where
+  convert _ x = pure $ coerce x
 
 -- | DTO mapping.
-instance Convertible X Model.Counter API.Counter where
-  convert Model.Counter {Model.counterId, Model.counterValue} =
-    API.Counter
-      { API.counterId = convert @X counterId,
-        API.counterValue = counterValue
-      }
+instance Monad m => Convertible X m deps Model.Counter API.Counter where
+  convert deps Model.Counter {Model.counterId, Model.counterValue} = do
+    counterId' <- convert @X deps counterId
+    pure
+      API.Counter
+        { API.counterId = counterId',
+          API.counterValue = counterValue
+        }
 
 -- | DTO mapping.
-instance Convertible X () () where
-  convert = id
+instance Monad m => Convertible X m deps () () where
+  convert _ x = pure x
 
 -- | The type parameters here are a bit weird compared to other components.
 --
@@ -100,14 +104,14 @@ makeServantServer ::
   ) =>
   deps ->
   ServantServer env m
-makeServantServer (Call φ) = ServantServer
+makeServantServer deps@(Call φ) = ServantServer
   \(_ :: User) ->
     CounterCollectionAPI
       { counters = \counterId -> do
           CounterAPI
-            { increase = toHandler @X (φ Model.increaseCounter) counterId,
-              query = toHandler @X (φ Model.getCounter) counterId,
-              delete = toHandler @X (φ Model.deleteCounter) counterId
+            { increase = toHandler @X deps (φ Model.increaseCounter) counterId,
+              query = toHandler @X deps (φ Model.getCounter) counterId,
+              delete = toHandler @X deps (φ Model.deleteCounter) counterId
             },
-        create = toHandler @X (φ Model.createCounter)
+        create = toHandler @X deps (φ Model.createCounter)
       }
