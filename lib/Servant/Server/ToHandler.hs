@@ -13,6 +13,8 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | A bunch of helper typeclasses to convert from application models into
 -- Servant handlers.
@@ -36,6 +38,9 @@ import Servant.Server
   ( Handler (..),
     ServerError,
   )
+import Data.Kind
+import Multicurryable
+import Data.SOP
 
 -- | Converts some monadic function into something usable as a Servant handler.
 -- 
@@ -45,8 +50,43 @@ import Servant.Server
 -- Also, the required instances of 'FromDTO' must exist for its arguments, the
 -- required instances of 'ToDTO' must exist for its result value, and the
 -- required instances of 'ToServerError' must exist for its errors.
-class ToHandler mark before after where
-  toHandler :: before -> after
+class 
+  (Multicurryable (->) modelargs modeltip model,
+   modeltip ~ ReaderT runenv IO modelresult,
+   Multicurryable Either modelerrors modelsuccess modelresult,
+   Multicurryable (->) handlerargs handlertip handler,
+   handlertip ~ ReaderT runenv Handler handlerresult,
+   --
+   AllZip (Convertible mark) modelargs handlerargs
+   All (ToServerError mark) modelerrors
+   )
+  =>
+  ToHandler mark 
+            (modelargs :: [Type]) 
+            (modelerrors :: [Type]) 
+            modelsuccess
+            modelresult 
+            modeltip
+            model 
+            (handlerargs :: [Type]) 
+            handlersuccess
+            handlerresult 
+            handlertip
+            handler 
+            runenv
+  | model -> modelargs modeltip,
+    modeltip -> modelresult runenv,
+    modelresult -> modelerrors modelsuccess,
+    handler -> handlerargs handlertip,
+    handlertip -> handlerresult runev,
+    handlerresult -> modelsuccess runenv
+  where
+  toHandler :: model -> handler
+
+class Convertible mark source target where
+  convert :: source -> target
+
+type ToServerError mark source = Convertible mark source ServerError
 
 instance (FromDTO mark a' a, ToHandler mark b b') => ToHandler mark (a -> b) (a' -> b') where
   toHandler f = toHandler @mark . (f . fromDTO @mark)
