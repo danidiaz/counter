@@ -116,4 +116,4 @@ makeServantServer deps@(Call φ) = ServantServer
         create = toH (φ Model.createCounter)
       }
   where
-    HandlerConverter {toH} = makeHandlerConverter @X deps
+    HandlerConverter toH = makeHandlerConverter @X deps

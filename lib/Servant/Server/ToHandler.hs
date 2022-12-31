@@ -139,9 +139,9 @@ class Convertible mark m deps source ServerError => ToServerError mark m deps so
 
 instance Convertible mark m deps source ServerError => ToServerError mark m deps source
 
-newtype HandlerConverter mark deps = HandlerConverter  {
-    toH :: 
-        forall
+newtype HandlerConverter mark deps
+  = HandlerConverter
+      ( forall
           model
           (modelArgs :: [Type])
           modelResult
@@ -163,7 +163,7 @@ newtype HandlerConverter mark deps = HandlerConverter  {
           handlerSuccess =>
         model ->
         handler
-  }
+      )
 
 makeHandlerConverter ::
   forall mark deps.
