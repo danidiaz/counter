@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- | This module connects the Servant API with the application's model.
 --
@@ -96,7 +97,8 @@ newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env 
 -- Servant: we need to change the monad, convert model errros to
 -- 'ServantError's, convert API DTOs to and from model datatypes...
 makeServantServer ::
-  ( m ~ ReaderT env IO,
+  ( 
+    m ~ ReaderT env IO,
     Has GetCounter m deps,
     Has IncreaseCounter m deps,
     Has DeleteCounter m deps,
@@ -104,17 +106,14 @@ makeServantServer ::
   ) =>
   deps ->
   ServantServer env m
-makeServantServer deps = ServantServer
+makeServantServer (asHandlerCall @X -> η) = ServantServer
   \(_ :: User) ->
     CounterCollectionAPI
       { counters = \counterId -> do
           CounterAPI
-            { increase = η (φ Model.increaseCounter) counterId,
-              query = η (φ Model.getCounter) counterId,
-              delete = η (φ Model.deleteCounter) counterId
+            { increase = η Model.increaseCounter counterId,
+              query = η Model.getCounter counterId,
+              delete = η Model.deleteCounter counterId
             },
-        create = η (φ Model.createCounter)
+        create = η Model.createCounter
       }
-  where
-    Handlerizer η = makeHandlerizer @X deps
-    Call φ = deps

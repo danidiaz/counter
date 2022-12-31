@@ -25,9 +25,9 @@
 -- The basic idea is defining 'ToServerError', 'ToDTO' and 'FromDTO' for types
 -- in your model, in order to be able to invoke 'toHandler'.
 module Servant.Server.ToHandler
-  ( ToHandler (toHandler),
-    makeHandlerizer,
-    Handlerizer (..),
+  ( -- ToHandler (toHandler),
+    asHandlerCall,
+    -- Handlerizer (..),
     Convertible (convert),
     ToServerError,
     -- ToDTO(toDTO),
@@ -42,6 +42,8 @@ import Data.Kind
 import Data.SOP
 import Data.SOP.NP (sequence_NP, trans_NP)
 import Data.SOP.NS (cmap_NS, collapse_NS, sequence'_NS)
+import Dep.Has
+import Dep.Has.Call
 import Multicurryable
 import Servant.Server
   ( Handler (..),
@@ -139,34 +141,32 @@ class Convertible mark m deps source ServerError => ToServerError mark m deps so
 
 instance Convertible mark m deps source ServerError => ToServerError mark m deps source
 
-newtype Handlerizer mark deps
-  = Handlerizer
-      ( forall
-          model
-          (modelArgs :: [Type])
-          modelResult
-          (modelErrors :: [Type])
-          modelSuccess
-          handler
-          (handlerArgs :: [Type])
-          handlerSuccess.
-        ToHandler
-          mark
-          deps
-          model
-          (modelArgs :: [Type])
-          modelResult
-          (modelErrors :: [Type])
-          modelSuccess
-          handler
-          (handlerArgs :: [Type])
-          handlerSuccess =>
-        model ->
-        handler
-      )
-
-makeHandlerizer ::
-  forall mark deps.
+asHandlerCall ::
+  forall mark deps env.
   deps ->
-  Handlerizer mark deps
-makeHandlerizer deps = Handlerizer (toHandler @mark @deps deps)
+  forall
+    r
+    model
+    (modelArgs :: [Type])
+    modelResult
+    (modelErrors :: [Type])
+    modelSuccess
+    handler
+    (handlerArgs :: [Type])
+    handlerSuccess.
+  ( ToHandler
+      mark
+      deps
+      model
+      (modelArgs :: [Type])
+      modelResult
+      (modelErrors :: [Type])
+      modelSuccess
+      handler
+      (handlerArgs :: [Type])
+      handlerSuccess,
+    Has r (ReaderT env IO) deps
+  ) =>
+  (r (ReaderT env IO) -> model) ->
+  handler
+asHandlerCall deps@(Call φ) g = toHandler @mark deps (φ g)
