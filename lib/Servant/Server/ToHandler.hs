@@ -26,8 +26,8 @@
 -- in your model, in order to be able to invoke 'toHandler'.
 module Servant.Server.ToHandler
   ( ToHandler (toHandler),
-    makeHandlerConverter,
-    HandlerConverter (..),
+    makeHandlerizer,
+    Handlerizer (..),
     Convertible (convert),
     ToServerError,
     -- ToDTO(toDTO),
@@ -139,8 +139,8 @@ class Convertible mark m deps source ServerError => ToServerError mark m deps so
 
 instance Convertible mark m deps source ServerError => ToServerError mark m deps source
 
-newtype HandlerConverter mark deps
-  = HandlerConverter
+newtype Handlerizer mark deps
+  = Handlerizer
       ( forall
           model
           (modelArgs :: [Type])
@@ -165,8 +165,8 @@ newtype HandlerConverter mark deps
         handler
       )
 
-makeHandlerConverter ::
+makeHandlerizer ::
   forall mark deps.
   deps ->
-  HandlerConverter mark deps
-makeHandlerConverter deps = HandlerConverter (toHandler @mark @deps deps)
+  Handlerizer mark deps
+makeHandlerizer deps = Handlerizer (toHandler @mark @deps deps)

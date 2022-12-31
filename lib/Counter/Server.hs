@@ -104,16 +104,17 @@ makeServantServer ::
   ) =>
   deps ->
   ServantServer env m
-makeServantServer deps@(Call φ) = ServantServer
+makeServantServer deps = ServantServer
   \(_ :: User) ->
     CounterCollectionAPI
       { counters = \counterId -> do
           CounterAPI
-            { increase = toH (φ Model.increaseCounter) counterId,
-              query = toH (φ Model.getCounter) counterId,
-              delete = toH (φ Model.deleteCounter) counterId
+            { increase = η (φ Model.increaseCounter) counterId,
+              query = η (φ Model.getCounter) counterId,
+              delete = η (φ Model.deleteCounter) counterId
             },
-        create = toH (φ Model.createCounter)
+        create = η (φ Model.createCounter)
       }
   where
-    HandlerConverter toH = makeHandlerConverter @X deps
+    Handlerizer η = makeHandlerizer @X deps
+    Call φ = deps
