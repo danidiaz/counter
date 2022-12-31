@@ -25,13 +25,14 @@
 -- The basic idea is defining 'ToServerError', 'ToDTO' and 'FromDTO' for types
 -- in your model, in order to be able to invoke 'toHandler'.
 module Servant.Server.ToHandler
-  ( -- ToHandler (toHandler),
+  ( ToHandler,
     asHandlerCall,
-    -- Handlerizer (..),
     Convertible (convert),
+    convertConst,
+    convertId,
+    convertPure,
+    convertCoerce,
     ToServerError,
-    -- ToDTO(toDTO),
-    -- FromDTO(fromDTO),
   )
 where
 
@@ -136,6 +137,18 @@ instance
 
 class Convertible mark m deps source target where
   convert :: deps -> source -> m target
+
+convertPure :: Applicative m => (source -> target) -> deps -> source -> m target
+convertPure f _ source = pure (f source)
+
+convertConst :: Applicative m => target -> deps -> source -> m target
+convertConst t _ _ = pure t
+
+convertId :: Applicative m => deps -> source -> m source
+convertId _ x = pure x
+
+convertCoerce :: (Applicative m, Coercible source target) => deps -> source -> m target
+convertCoerce _ x = pure (coerce x)
 
 class Convertible mark m deps source ServerError => ToServerError mark m deps source
 

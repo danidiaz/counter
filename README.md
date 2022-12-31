@@ -76,7 +76,7 @@ Log messages look like this. Notice they include the [names](https://www.tweag.i
 
 Counters that haven't been updated in a period of time (specified in the
 configuration file) are deleted. This is just an excuse for playing with
-asynchronous actions.
+asynchronous tasks.
 
 Why so overengineered?
 ----------------------
@@ -91,6 +91,8 @@ I wanted to scratch the following itches:
             - It could potentially help with versioning.
             - It could potentially help when generating Servant APIs from OpenAPI specs.
             - Having to declare `FromHttpApiData` instances for the datatypes in you model feels kind of gross, better define them for your DTOs.
+    - Conversions between the API and the model should be able to have effects.
+    Think for example of a conversion function which accesses a database.
 
 - Servant handlers should be "built" using dependency injection.
     - Convenient way of wiring dependencies like loggers.
@@ -111,7 +113,20 @@ Preferably, this should be done automatically.
 
 - Each component should be in charge of parsing its *own* piece of the
 configuration. When wiring components together, the different configuration
-parsers are aggregated.
+parsers should be aggregated.
+
+- Components should be able to "register" asynchronous background tasks.
+
+Registering the background tasks should be done when adding the corresponding
+component to the dependency injection context, and in the same region of code. 
+This minimizes the risk of forgetting to register tasks elsewhere.
+
+- Provide "control" HTTP endpoints for important components, that allow admins
+to inspect and set their configurations at runtime.
+
+In the spirit of Spring Boot's "actuator" framework.
+
+Hopefully this should be achieved witout a lot of boilerplate.
 
 Links
 -----

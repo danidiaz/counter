@@ -32,10 +32,8 @@ import Counter.API
 import Counter.API qualified as API
 import Counter.Model
 import Counter.Model qualified as Model
-import Data.Coerce
 import Data.Kind
 import Dep.Has
-import Dep.Has.Call
 import Servant (ServerError)
 import Servant.Server
   ( Handler,
@@ -53,19 +51,19 @@ data X
 
 -- | Maps a domain-relevant error to 'ServerError'.
 instance Monad m => Convertible X m deps Model.Missing ServerError where
-  convert _ _ = pure err404
+  convert = convertConst err404
 
 -- | Maps a domain-relevant error to 'ServerError'.
 instance Monad m => Convertible X m deps Model.Collision ServerError where
-  convert _ _ = pure err500
+  convert = convertConst err500
 
 -- | DTO mapping.
 instance Monad m => Convertible X m deps API.CounterId Model.CounterId where
-  convert _ x = pure $ coerce x
+  convert = convertCoerce
 
 -- | DTO mapping.
 instance Monad m => Convertible X m deps Model.CounterId API.CounterId where
-  convert _ x = pure $ coerce x
+  convert = convertCoerce
 
 -- | DTO mapping.
 instance Monad m => Convertible X m deps Model.Counter API.Counter where
@@ -79,7 +77,7 @@ instance Monad m => Convertible X m deps Model.Counter API.Counter where
 
 -- | DTO mapping.
 instance Monad m => Convertible X m deps () () where
-  convert _ x = pure x
+  convert = convertId
 
 -- | The type parameters here are a bit weird compared to other components.
 --
