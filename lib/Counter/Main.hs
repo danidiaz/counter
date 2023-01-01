@@ -228,13 +228,13 @@ customizeDepAccum l tweak c =
    in fromBare $ bareAccumConstructor . second (l %~ tweak tyRep)
 
 -- | Move this to Dep.Env ?
-mapAllPhases ::
+liftAH ::
   forall deps_ phases m.
   (Phased deps_, Typeable phases, Typeable m) =>
   (forall x . Typeable x => phases x -> phases x) ->
   deps_ phases m ->
   deps_ phases m
-mapAllPhases tweak =
+liftAH tweak =
   runIdentity . traverseH (Identity . tweak) 
 
 main :: IO ()
@@ -247,7 +247,7 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let namedLoggers = mapAllPhases (customizeDepAccum loggerLens alwaysLogFor) constructors
+        let namedLoggers = liftAH (customizeDepAccum loggerLens alwaysLogFor) constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep deps
