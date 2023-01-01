@@ -247,8 +247,10 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let namedLoggers = 
-              liftAH (contramapAccumConstructor (const id) (over loggerLens . alwaysLogFor)) constructors
+        let namedLoggers =
+              liftAH
+                (contramapAccumConstructor (const id) (over loggerLens . alwaysLogFor))
+                constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep deps
