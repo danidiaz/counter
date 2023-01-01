@@ -70,7 +70,9 @@ make ::
     Has (Repository rid resource) m deps,
     Ord rid
   ) =>
+  -- | Used to determine staleness.
   (resource -> UTCTime) ->
+  -- | 
   m Conf ->
   MapRef rid resource ->
   deps ->

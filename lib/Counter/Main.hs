@@ -34,40 +34,44 @@ import Counter.Model qualified as Data.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
+import Data.Bifunctor (Bifunctor (second))
 import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
 import Data.Kind (Type)
+import Data.Proxy
+import Data.Typeable
 import Dep.Clock
 import Dep.Clock.Real qualified
 import Dep.Conf
 import Dep.Env
-  ( Autowireable,
+  ( AccumConstructor,
+    Autowireable,
     Autowired (..),
     Compose (Compose),
     FieldsFindableByType,
     Identity (Identity),
     Phased (traverseH),
+    fixEnvAccum,
     fromBare,
-    pullPhase, AccumConstructor, fixEnvAccum, toBare,
+    pullPhase,
+    toBare,
   )
 import Dep.Has (Has (dep))
 import Dep.Has.Call
 import Dep.Knob
 import Dep.Knob.IORef
 import Dep.Knob.Server
-import Dep.Server
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.ReaderAdvice
 import Dep.Repository
 import Dep.Repository.Memory
+import Dep.Server
 import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
-import Data.Proxy
-import Data.Typeable
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -130,18 +134,18 @@ deps_ =
               knobRef <- Dep.Knob.IORef.alloc conf
               mapRef <- Dep.Repository.Memory.alloc
               pure (Dep.Knob.IORef.make conf knobRef, mapRef)
-            <&> \(knob, mapRef) ~(_, deps :: Deps M) ->
-              Dep.Repository.Memory.make Data.Model.lastUpdated (inspectKnob knob) mapRef deps & \case
-                -- https://twitter.com/chris__martin/status/1586066539039453185
-                (launcher, repo@Repository {withResource}) ->
-                  repo
-                    { withResource =
-                        withResource -- Here we instrument a single method
-                          & advise (logExtraMessage deps "Extra log message added by instrumentation")
-                    }
-                    -- Here we add additional instrumentation for all the methods in the component.
-                    & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
-                    & (,) ([launcher], knobNamed "repository" knob),
+              <&> \(knob, mapRef) ~(_, deps :: Deps M) ->
+                Dep.Repository.Memory.make Data.Model.lastUpdated (inspectKnob knob) mapRef deps & \case
+                  -- https://twitter.com/chris__martin/status/1586066539039453185
+                  (launcher, repo@Repository {withResource}) ->
+                    repo
+                      { withResource =
+                          withResource -- Here we instrument a single method
+                            & advise (logExtraMessage deps "Extra log message added by instrumentation")
+                      }
+                      -- Here we add additional instrumentation for all the methods in the component.
+                      & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
+                      & (,) ([launcher], knobNamed "repository" knob),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -188,7 +192,7 @@ deps_ =
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
-deriving via Autowired (Deps      m) instance Autowireable r_ m (Deps m) => Has r_ m (Deps m)
+deriving via Autowired (Deps m) instance Autowireable r_ m (Deps m) => Has r_ m (Deps m)
 
 -- | This is the 'ReaderT' environment in which the handlers run.
 newtype Env = Env
@@ -203,20 +207,21 @@ instance HasHandlerContext Env where
 
 -- Think about how to make this function more general, less tied to the concrete
 -- environment, so that it can be put in a library.
-installNamedLogger :: forall x m . Typeable x => 
+installNamedLogger ::
+  forall x m.
+  Typeable x =>
   AccumConstructor (Accumulator m) (Deps m) x ->
-  Identity (AccumConstructor (Accumulator m) (Deps m) x)
-installNamedLogger f = 
-  let 
-      f' = toBare f 
-      f'' accEnv = f' (fmap tweakEnv accEnv)
-      f''' = fromBare f''
-      tweakEnv :: Deps m -> Deps m
-      tweakEnv deps = deps { _logger = deps & _logger <&> tweakLogger }
-      tweakLogger :: Logger m -> Logger m
-      tweakLogger Logger { logFor } = Logger { log = logFor (Just tyRep), logFor }
-      tyRep = typeRep (Proxy @x) 
-   in Identity f'''
+  AccumConstructor (Accumulator m) (Deps m) x
+installNamedLogger f =
+  let bareAccumConstructor :: (Accumulator m, Deps m) -> (Accumulator m, x)
+      bareAccumConstructor = toBare f
+   in fromBare $ bareAccumConstructor . second tweakEnv
+  where
+    tweakEnv :: Deps m -> Deps m
+    tweakEnv deps = deps {_logger = deps & _logger <&> tweakLogger}
+    tweakLogger :: Logger m -> Logger m
+    tweakLogger Logger {logFor} = Logger {log = logFor (Just tyRep), logFor}
+    tyRep = typeRep (Proxy @x)
 
 main :: IO ()
 main = do
@@ -228,7 +233,7 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let Identity namedLoggers = traverseH installNamedLogger constructors
+        let Identity namedLoggers = traverseH (Identity . installNamedLogger) constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep deps

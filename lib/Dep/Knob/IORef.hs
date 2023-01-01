@@ -7,7 +7,12 @@ import Control.Monad.IO.Class
 alloc :: MonadIO n => conf -> n (IORef conf)
 alloc conf = liftIO $ newIORef conf
 
-make :: MonadIO m => conf -> IORef conf -> Knob conf m
+make :: MonadIO m => 
+  -- |
+  conf -> 
+  -- |
+  IORef conf -> 
+  Knob conf m
 make conf ref =
    Knob
       { 

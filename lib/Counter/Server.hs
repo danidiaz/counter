@@ -94,6 +94,8 @@ newtype CounterServer env m = CounterServer {counterServer :: ServerT API (RHand
 -- We need to massage the components a little because they know nothing of
 -- Servant: we need to change the monad, convert model errros to
 -- 'ServantError's, convert API DTOs to and from model datatypes...
+--
+-- See also "Dep.Server".
 makeCounterServer ::
   ( 
     m ~ RIO env,
@@ -102,7 +104,9 @@ makeCounterServer ::
     Has DeleteCounter m deps,
     Has CreateCounter m deps
   ) =>
+  -- |
   deps ->
+  -- |
   CounterServer env m
 makeCounterServer (asHandlerCall @X -> η) = CounterServer
   \(_ :: User) ->

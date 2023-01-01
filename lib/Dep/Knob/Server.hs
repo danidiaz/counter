@@ -65,6 +65,7 @@ newtype KnobServer env m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCo
 knobNamed :: forall conf m. (FromJSON conf, ToJSON conf) => KnobName -> Knob conf m -> KnobMap m
 knobNamed name knob = Map.singleton name (SomeKnob knob)
 
+-- See also "Dep.Server".
 makeKnobServer ::
   forall env m.
   ( m ~ RIO env

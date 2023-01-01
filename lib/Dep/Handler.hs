@@ -16,18 +16,20 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
--- | A bunch of helper typeclasses to convert from application models into
--- Servant handlers.
+-- | A bunch of helpers for turning functions from the model (which should be
+-- innocent from any web framework) into Servant handlers.
 --
--- Most typeclasses are parameterized by a phantom type @mark@ defined by users
--- of the module, which identifies the API and helps avoid instance collisions.
+-- Typeclasses in this module are parameterized by a phantom type @mark@ defined
+-- by users of the module, which identifies the API / model pair and helps avoid
+-- instance collisions.
 --
--- The basic idea is defining 'ToServerError', 'ToDTO' and 'FromDTO' for types
--- in your model, in order to be able to invoke 'toHandler'.
+-- Clients need to define the necessary 'Convertible' instances for types in their
+-- model.
+--
+-- Then, when writing a Servant server, they should obtain a handler adapter by
+-- calling 'asHandlerCall'.
 module Dep.Handler
-  ( RIO,
-    RHandler,
-    ToHandler,
+  ( -- ToHandler,
     asHandlerCall,
     Convertible (convert),
     convertConst,
@@ -35,6 +37,10 @@ module Dep.Handler
     convertPure,
     convertCoerce,
     ToServerError,
+
+    -- * "Dep.Server" re-exports
+    RIO,
+    RHandler,
   )
 where
 
@@ -47,19 +53,19 @@ import Data.SOP.NP (sequence_NP, trans_NP)
 import Data.SOP.NS (cmap_NS, collapse_NS, sequence'_NS)
 import Dep.Has
 import Dep.Has.Call
+import Dep.Server
 import Multicurryable
 import Servant.Server
   ( Handler (..),
     ServerError,
   )
-import Dep.Server
 
 -- | Converts some monadic function from the model into something usable as a
 -- Servant handler.
--- 
+--
 -- For this to work, the monadic function must use @ReaderT@ over @IO@ for its
 -- effects.
--- 
+--
 -- Also, the required instances of 'Convertible' must exist for its arguments
 -- and result value, and the required instances of 'ToServerError' must exist
 -- for its errors.
@@ -154,10 +160,12 @@ convertId _ x = pure x
 convertCoerce :: (Applicative m, Coercible source target) => deps -> source -> m target
 convertCoerce _ x = pure (coerce x)
 
+-- | A class synonym for @Convertible mark m deps source ServerError@.
 class Convertible mark m deps source ServerError => ToServerError mark m deps source
 
 instance Convertible mark m deps source ServerError => ToServerError mark m deps source
 
+-- | __TYPE APPLICATION REQUIRED__! You must specify the @mark@ using a type application.
 asHandlerCall ::
   forall mark deps env.
   deps ->

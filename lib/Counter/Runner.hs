@@ -81,13 +81,16 @@ newtype Conf = Conf {
 type ServantRunner :: Type -> (Type -> Type) -> Type
 newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 
+-- | See also "Dep.Server".
 makeServantRunner ::
   forall m deps env.
   ( m ~ RIO env,
     Has (CounterServer env) m deps,
     Has (KnobServer env) m deps
   ) =>
+  -- | 
   Conf ->
+  -- |
   deps -> 
   ServantRunner env m
 makeServantRunner Conf {port} deps = ServantRunner {
