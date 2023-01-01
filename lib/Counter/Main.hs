@@ -31,7 +31,6 @@ import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Cont
 import Counter.Model
-import Counter.Model qualified as Data.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
@@ -83,7 +82,7 @@ import Prelude hiding (log)
 data Deps_ phase m = Deps
   { _clock :: phase (Clock m),
     _logger :: phase (Logger m),
-    _counterRepository :: phase (Model.CounterRepository m),
+    _counterRepository :: phase (CounterRepository m),
     _getCounter :: phase (GetCounter m),
     _increaseCounter :: phase (IncreaseCounter m),
     _deleteCounter :: phase (DeleteCounter m),
@@ -136,7 +135,7 @@ deps_ =
               mapRef <- Dep.Repository.Memory.alloc
               pure (Dep.Knob.IORef.make conf knobRef, mapRef)
               <&> \(knob, mapRef) ~(_, deps :: Deps M) ->
-                Dep.Repository.Memory.make Data.Model.lastUpdated (inspectKnob knob) mapRef deps & \case
+                Dep.Repository.Memory.make Model.lastUpdated (inspectKnob knob) mapRef deps & \case
                   -- https://twitter.com/chris__martin/status/1586066539039453185
                   (launcher, repo@Repository {withResource}) ->
                     repo
