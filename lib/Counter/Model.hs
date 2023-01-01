@@ -72,7 +72,7 @@ type CounterRepository = Repository CounterId Counter
 
 newtype GetCounter m = GetCounter {getCounter :: CounterId -> m (Either Missing Counter)}
 
-makeGetCounter :: (Monad m, Has CounterRepository m env) => env -> GetCounter m
+makeGetCounter :: (Monad m, Has CounterRepository m deps) => deps -> GetCounter m
 makeGetCounter (Call φ) = GetCounter \counterId -> do
   RunWithExistingResource {runWithExistingResource} <- φ withExistingResource counterId
   runWithExistingResource (\c -> (c, Just c))
@@ -81,10 +81,10 @@ newtype IncreaseCounter m = IncreaseCounter {increaseCounter :: CounterId -> m (
 
 makeIncreaseCounter ::
   ( Monad m,
-    Has Clock m env,
-    Has CounterRepository m env
+    Has Clock m deps,
+    Has CounterRepository m deps
   ) =>
-  env ->
+  deps ->
   IncreaseCounter m
 makeIncreaseCounter (Call φ) = IncreaseCounter \counterId -> do
   now <- φ getNow
@@ -95,10 +95,10 @@ newtype DeleteCounter m = DeleteCounter {deleteCounter :: CounterId -> m (Either
 
 makeDeleteCounter ::
   ( Monad m,
-    Has Logger m env,
-    Has CounterRepository m env
+    Has Logger m deps,
+    Has CounterRepository m deps
   ) =>
-  env ->
+  deps ->
   DeleteCounter m
 makeDeleteCounter (Call φ) = DeleteCounter \counterId -> do
   φ log Info $ "Requesting counter deletion " ++ show counterId
@@ -109,10 +109,10 @@ newtype CreateCounter m = CreateCounter {createCounter :: m (Either Collision Co
 
 makeCreateCounter ::
   ( MonadIO m,
-    Has Clock m env,
-    Has CounterRepository m env
+    Has Clock m deps,
+    Has CounterRepository m deps
   ) =>
-  env ->
+  deps ->
   CreateCounter m
 makeCreateCounter (Call φ) = CreateCounter do
   counterId <- CounterId <$> liftIO nextRandom
