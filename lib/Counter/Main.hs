@@ -22,7 +22,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Counter.Main where
+module Counter.Main (main) where
 
 import Control.Applicative
 import Control.Arrow (Kleisli (..))
@@ -86,7 +86,7 @@ import Data.Typeable
 -- DI contexts move through a series of phases while they are being build.
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
-data DepEnv phase m = DepEnv
+data Deps phase m = Deps
   { _clock :: phase (Clock m),
     _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
@@ -101,7 +101,7 @@ data DepEnv phase m = DepEnv
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
 
-type FinalDepEnv m = DepEnv Identity m
+type FinalDepEnv m = Deps Identity m
 
 -- | An allocation phase in which components allocate some resource that they'll
 -- use during operation.
@@ -121,9 +121,9 @@ type M = ReaderT Env IO
 
 -- | >>> :kind! Bare (Phases M (Logger M))
 -- Bare (Phases M (Logger M)) :: *
-depEnv :: DepEnv (Phases M) M
-depEnv =
-  DepEnv
+deps :: Deps (Phases M) M
+deps =
+  Deps
     { _clock = purePhases $ noAccum $ \_ -> Dep.Clock.Real.make,
       _logger =
         fromBare $
@@ -232,7 +232,7 @@ installNamedLogger f =
 main :: IO ()
 main = do
   -- CONFIGURATION PHASE
-  parseResult <- parseYamlFile (pullPhase depEnv) "conf.yaml"
+  parseResult <- parseYamlFile (pullPhase deps) "conf.yaml"
   case parseResult of
     Left err -> print err
     Right allocators -> do
