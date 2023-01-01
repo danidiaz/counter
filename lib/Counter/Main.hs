@@ -94,7 +94,7 @@ data DepEnv phase m = DepEnv
     _increaseCounter :: phase (IncreaseCounter m),
     _deleteCounter :: phase (DeleteCounter m),
     _createCounter :: phase (CreateCounter m),
-    _server :: phase (ServantServer Env m),
+    _server :: phase (CounterServer Env m),
     _knobServer :: phase (KnobServer Env m),
     _runner :: phase (ServantRunner Env m)
   }
@@ -175,9 +175,9 @@ depEnv =
         -- the Logger.
         purePhases $
           noAccum \deps ->
-            makeServantServer deps & \case
-              servantServer@(ServantServer {server}) ->
-                servantServer {server = addHandlerContext [] server},
+            makeCounterServer deps & \case
+              server@(CounterServer {counterServer}) ->
+                server {counterServer = addHandlerContext [] counterServer},
       _knobServer = purePhases \ ~((_, knobs), _) -> (mempty, makeKnobServer knobs),
       _runner =
         fromBare $

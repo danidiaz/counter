@@ -22,8 +22,8 @@
 --
 -- In particular, it defines some instances that help map datatypes to and fro.
 module Counter.Server
-  ( ServantServer (..),
-    makeServantServer,
+  ( CounterServer (..),
+    makeCounterServer,
   )
 where
 
@@ -85,8 +85,8 @@ instance Monad m => Convertible X m deps () () where
 --
 -- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
 -- instances require a 'ReaderT' monad to work.
-type ServantServer :: Type -> (Type -> Type) -> Type
-newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env Handler)}
+type CounterServer :: Type -> (Type -> Type) -> Type
+newtype CounterServer env m = CounterServer {counterServer :: ServerT API (ReaderT env Handler)}
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.
@@ -94,7 +94,7 @@ newtype ServantServer env m = ServantServer {server :: ServerT API (ReaderT env 
 -- We need to massage the components a little because they know nothing of
 -- Servant: we need to change the monad, convert model errros to
 -- 'ServantError's, convert API DTOs to and from model datatypes...
-makeServantServer ::
+makeCounterServer ::
   ( 
     m ~ ReaderT env IO,
     Has GetCounter m deps,
@@ -103,8 +103,8 @@ makeServantServer ::
     Has CreateCounter m deps
   ) =>
   deps ->
-  ServantServer env m
-makeServantServer (asHandlerCall @X -> η) = ServantServer
+  CounterServer env m
+makeCounterServer (asHandlerCall @X -> η) = CounterServer
   \(_ :: User) ->
     CounterCollectionAPI
       { counters = \counterId -> do

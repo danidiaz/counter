@@ -88,7 +88,7 @@ newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 makeServantRunner ::
   forall m deps env.
   ( m ~ ReaderT env IO,
-    Has (ServantServer env) m deps,
+    Has (CounterServer env) m deps,
     Has (KnobServer env) m deps
   ) =>
   Conf ->
@@ -96,9 +96,9 @@ makeServantRunner ::
   ServantRunner env m
 makeServantRunner Conf {port} deps = ServantRunner {
     runServer = \env ->
-        let ServantServer {server} = dep deps
+        let CounterServer {counterServer} = dep deps
             KnobServer {knobServer} = dep deps
-            fullServer = server :<|> \_ -> knobServer
+            fullServer = counterServer :<|> \_ -> knobServer
             hoistedServer =
                 hoistServerWithContext
                     (Proxy @FullAPI)
