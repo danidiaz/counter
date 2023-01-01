@@ -27,7 +27,7 @@ module Counter.Main (main) where
 
 import Control.Applicative
 import Control.Arrow (Kleisli (..))
-import Control.Lens (Lens', over)
+import Control.Lens (Lens', (%~))
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Cont
@@ -249,7 +249,7 @@ main = do
         -- WIRING PHASE
         let namedLoggers =
               liftAH
-                (contramapAccumConstructor (const id) (over loggerLens . alwaysLogFor))
+                (contramapAccumConstructor (const id) (\tyRep -> loggerLens %~ alwaysLogFor tyRep))
                 constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
