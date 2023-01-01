@@ -72,6 +72,8 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
+import Control.Lens (Lens', (%~))
+import Data.Functor.Identity (runIdentity)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -194,6 +196,11 @@ deps_ =
 -- DI context.
 deriving via Autowired (Deps m) instance Autowireable r_ m (Deps m) => Has r_ m (Deps m)
 
+loggerLens :: Lens' (Deps m) (Logger m)
+loggerLens f s =
+    -- Artisanal lens.
+    getField @"_logger" s & runIdentity & f <&> \a -> s {_logger = Identity a}
+
 -- | This is the 'ReaderT' environment in which the handlers run.
 newtype Env = Env
   { _handlerContext :: HandlerContext
@@ -205,23 +212,30 @@ instance HasHandlerContext Env where
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
--- Think about how to make this function more general, less tied to the concrete
--- environment, so that it can be put in a library.
-installNamedLogger ::
-  forall x accum m.
-  Typeable x =>
-  AccumConstructor accum (Deps m) x ->
-  AccumConstructor accum (Deps m) x
-installNamedLogger f =
-  let bareAccumConstructor :: (accum, Deps m) -> (accum, x)
-      bareAccumConstructor = toBare f
-   in fromBare $ bareAccumConstructor . second tweakEnv
-  where
-    tweakEnv :: Deps m -> Deps m
-    tweakEnv deps = deps {_logger = deps & _logger <&> tweakLogger}
-    tweakLogger :: Logger m -> Logger m
-    tweakLogger Logger {logFor} = Logger {log = logFor (Just tyRep), logFor}
-    tyRep = typeRep (Proxy @x)
+
+-- move this to Dep.Env?
+customizeDepAccum ::
+  forall accum deps dep component.
+  Typeable component =>
+  Lens' deps dep ->
+  (TypeRep -> dep -> dep) ->
+  AccumConstructor accum deps component ->
+  AccumConstructor accum deps component 
+customizeDepAccum l tweak c =
+  let bareAccumConstructor :: (accum, deps) -> (accum, component)
+      bareAccumConstructor = toBare c
+      tyRep = typeRep (Proxy @component)
+   in fromBare $ bareAccumConstructor . second (l %~ tweak tyRep)
+
+-- | Move this to Dep.Env ?
+mapAllPhases ::
+  forall deps_ phases m.
+  (Phased deps_, Typeable phases, Typeable m) =>
+  (forall x . Typeable x => phases x -> phases x) ->
+  deps_ phases m ->
+  deps_ phases m
+mapAllPhases tweak =
+  runIdentity . traverseH (Identity . tweak) 
 
 main :: IO ()
 main = do
@@ -233,7 +247,7 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let Identity namedLoggers = traverseH (Identity . installNamedLogger) constructors
+        let namedLoggers = mapAllPhases (customizeDepAccum loggerLens alwaysLogFor) constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep deps

@@ -1,9 +1,16 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NamedFieldPuns #-}
 -- | Interface for a logger component.
-module Dep.Logger (Logger (..), Message, LogLevel (..)) where
+module Dep.Logger (
+  Logger (..), 
+  Message, 
+  LogLevel (..),
+  alwaysLogFor
+  ) where
 
 import GHC.Generics
 import Data.Typeable (TypeRep)
+import Prelude hiding (log)
 
 type Message = String
 
@@ -25,3 +32,6 @@ data LogLevel
   | Error
   | Fatal
   deriving (Eq, Show, Ord, Generic)
+
+alwaysLogFor :: TypeRep -> Logger m -> Logger m
+alwaysLogFor tyRep Logger {logFor} = Logger {log = logFor (Just tyRep), logFor}
