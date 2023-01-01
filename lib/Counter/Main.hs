@@ -20,8 +20,9 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
 
+-- | Hidden inside this module lies the dependency injection context, where all
+-- the different components of the application are brought together.
 module Counter.Main (main) where
 
 import Control.Applicative
