@@ -184,6 +184,8 @@ asHandlerCall ::
       handler,
     Has r (RIO env) deps
   ) =>
+  -- | An accessor for a function inside a component.
   (r (RIO env) -> model) ->
+  -- | Converted handler.
   handler
 asHandlerCall deps@(Call φ) g = toHandler @mark deps (φ g)
