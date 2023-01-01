@@ -83,7 +83,7 @@ newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 
 makeServantRunner ::
   forall m deps env.
-  ( m ~ ModelMonad env,
+  ( m ~ RIO env,
     Has (CounterServer env) m deps,
     Has (KnobServer env) m deps
   ) =>

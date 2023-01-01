@@ -86,7 +86,7 @@ instance Monad m => Convertible X m deps () () where
 -- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
 -- instances require a 'ReaderT' monad to work.
 type CounterServer :: Type -> (Type -> Type) -> Type
-newtype CounterServer env m = CounterServer {counterServer :: ServerT API (HandlerMonad env)}
+newtype CounterServer env m = CounterServer {counterServer :: ServerT API (RHandler env)}
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.
@@ -96,7 +96,7 @@ newtype CounterServer env m = CounterServer {counterServer :: ServerT API (Handl
 -- 'ServantError's, convert API DTOs to and from model datatypes...
 makeCounterServer ::
   ( 
-    m ~ ModelMonad env,
+    m ~ RIO env,
     Has GetCounter m deps,
     Has IncreaseCounter m deps,
     Has DeleteCounter m deps,

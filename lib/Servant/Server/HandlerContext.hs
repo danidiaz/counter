@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | A server typeclass for servant servers with names routes.
+-- | A server typeclass for servant servers with named routes.
 
 module Servant.Server.HandlerContext (
   FieldName,

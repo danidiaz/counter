@@ -25,8 +25,8 @@
 -- The basic idea is defining 'ToServerError', 'ToDTO' and 'FromDTO' for types
 -- in your model, in order to be able to invoke 'toHandler'.
 module Dep.Handler
-  ( ModelMonad,
-    HandlerMonad,
+  ( RIO,
+    RHandler,
     ToHandler,
     asHandlerCall,
     Convertible (convert),
@@ -82,10 +82,10 @@ class
   toHandler :: deps -> model -> handler
 
 instance
-  ( modelMonad ~ ModelMonad env,
+  ( modelMonad ~ RIO env,
     Multicurryable Either modelErrors modelSuccess modelResult,
     Multicurryable (->) modelArgs (modelMonad modelResult) model,
-    handlerMonad ~ HandlerMonad env,
+    handlerMonad ~ RHandler env,
     Multicurryable (->) handlerArgs (handlerMonad handlerResult) handler,
     --
     AllZip (Convertible mark modelMonad deps) handlerArgs modelArgs,
@@ -182,8 +182,8 @@ asHandlerCall ::
       (handlerArgs :: [Type])
       handlerResult
       handler,
-    Has r (ModelMonad env) deps
+    Has r (RIO env) deps
   ) =>
-  (r (ModelMonad env) -> model) ->
+  (r (RIO env) -> model) ->
   handler
 asHandlerCall deps@(Call φ) g = toHandler @mark deps (φ g)

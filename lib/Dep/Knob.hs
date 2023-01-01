@@ -8,9 +8,6 @@
 -- the application has started.
 --
 -- 'Knob' is a general interface that provices that. 
---
--- @makeX@ constructors for components that can be tuned at runtime return the
--- component wrapped in a 'Knob'.
 module Dep.Knob (Knob (..)) where
 
 import Data.Kind

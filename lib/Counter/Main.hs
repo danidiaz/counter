@@ -106,7 +106,7 @@ type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (Acc
 
 -- Monad used by the model.
 type M :: Type -> Type
-type M = ModelMonad Env
+type M = RIO Env
 
 -- | >>> :kind! Bare (Phases M (Logger M))
 -- Bare (Phases M (Logger M)) :: *

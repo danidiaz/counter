@@ -60,14 +60,14 @@ data SomeKnob m where
 type KnobMap m = Map KnobName (SomeKnob m)
 
 type KnobServer :: Type -> (Type -> Type) -> Type
-newtype KnobServer env m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCollectionAPI) (HandlerMonad env)}
+newtype KnobServer env m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCollectionAPI) (RHandler env)}
 
 knobNamed :: forall conf m. (FromJSON conf, ToJSON conf) => KnobName -> Knob conf m -> KnobMap m
 knobNamed name knob = Map.singleton name (SomeKnob knob)
 
 makeKnobServer ::
   forall env m.
-  ( m ~ ModelMonad env
+  ( m ~ RIO env
   ) =>
   KnobMap m ->
   KnobServer env m
