@@ -38,11 +38,10 @@ import Data.Kind
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Traversable (for)
-import Dep.Has (Has)
-import Dep.Has.Call
 import Dep.Knob (Knob)
 import Dep.Knob qualified
 import Dep.Knob.API
+import Dep.Server
 import Servant (NamedRoutes, err400)
 import Servant.API (NoContent (..))
 import Servant.Server
@@ -52,7 +51,6 @@ import Servant.Server
     err500,
   )
 import Servant.Server.Generic
-import Servant.Server.ToHandler
 
 data SomeKnob m where
   SomeKnob :: forall conf m. (FromJSON conf, ToJSON conf) => Knob conf m -> SomeKnob m
@@ -60,14 +58,14 @@ data SomeKnob m where
 type KnobMap m = Map KnobName (SomeKnob m)
 
 type KnobServer :: Type -> (Type -> Type) -> Type
-newtype KnobServer env m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCollectionAPI) (ReaderT env Handler)}
+newtype KnobServer env m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCollectionAPI) (HandlerMonad env)}
 
 knobNamed :: forall conf m. (FromJSON conf, ToJSON conf) => KnobName -> Knob conf m -> KnobMap m
 knobNamed name knob = Map.singleton name (SomeKnob knob)
 
 makeKnobServer ::
   forall env m.
-  ( m ~ ReaderT env IO
+  ( m ~ ModelMonad env
   ) =>
   KnobMap m ->
   KnobServer env m

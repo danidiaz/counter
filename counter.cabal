@@ -31,7 +31,6 @@ library lib-counter
                       Counter.Server
                       Counter.Runner
                       Counter.Model
-                      Servant.Server.ToHandler
                       Servant.Server.HandlerContext
                       Dep.Logger
                       Dep.Logger.HandlerAware
@@ -39,6 +38,8 @@ library lib-counter
                       Dep.Repository.Memory
                       Dep.Has.Call
                       Dep.Conf
+                      Dep.Handler
+                      Dep.Server
                       Dep.Knob
                       Dep.Knob.IORef
                       Dep.Knob.API

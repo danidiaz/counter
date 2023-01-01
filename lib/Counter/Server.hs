@@ -34,6 +34,7 @@ import Counter.Model
 import Counter.Model qualified as Model
 import Data.Kind
 import Dep.Has
+import Dep.Handler
 import Servant (ServerError)
 import Servant.Server
   ( Handler,
@@ -41,7 +42,6 @@ import Servant.Server
     err404,
     err500,
   )
-import Servant.Server.ToHandler
 
 -- | This is a marker type to identify the servant API.
 --
@@ -86,7 +86,7 @@ instance Monad m => Convertible X m deps () () where
 -- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
 -- instances require a 'ReaderT' monad to work.
 type CounterServer :: Type -> (Type -> Type) -> Type
-newtype CounterServer env m = CounterServer {counterServer :: ServerT API (ReaderT env Handler)}
+newtype CounterServer env m = CounterServer {counterServer :: ServerT API (HandlerMonad env)}
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.
@@ -96,7 +96,7 @@ newtype CounterServer env m = CounterServer {counterServer :: ServerT API (Reade
 -- 'ServantError's, convert API DTOs to and from model datatypes...
 makeCounterServer ::
   ( 
-    m ~ ReaderT env IO,
+    m ~ ModelMonad env,
     Has GetCounter m deps,
     Has IncreaseCounter m deps,
     Has DeleteCounter m deps,

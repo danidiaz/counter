@@ -24,8 +24,10 @@
 --
 -- The basic idea is defining 'ToServerError', 'ToDTO' and 'FromDTO' for types
 -- in your model, in order to be able to invoke 'toHandler'.
-module Servant.Server.ToHandler
-  ( ToHandler,
+module Dep.Handler
+  ( ModelMonad,
+    HandlerMonad,
+    ToHandler,
     asHandlerCall,
     Convertible (convert),
     convertConst,
@@ -50,6 +52,7 @@ import Servant.Server
   ( Handler (..),
     ServerError,
   )
+import Dep.Server
 
 -- | Converts some monadic function from the model into something usable as a
 -- Servant handler.
@@ -79,10 +82,10 @@ class
   toHandler :: deps -> model -> handler
 
 instance
-  ( modelMonad ~ ReaderT env IO,
+  ( modelMonad ~ ModelMonad env,
     Multicurryable Either modelErrors modelSuccess modelResult,
     Multicurryable (->) modelArgs (modelMonad modelResult) model,
-    handlerMonad ~ ReaderT env Handler,
+    handlerMonad ~ HandlerMonad env,
     Multicurryable (->) handlerArgs (handlerMonad handlerResult) handler,
     --
     AllZip (Convertible mark modelMonad deps) handlerArgs modelArgs,
@@ -179,8 +182,8 @@ asHandlerCall ::
       (handlerArgs :: [Type])
       handlerResult
       handler,
-    Has r (ReaderT env IO) deps
+    Has r (ModelMonad env) deps
   ) =>
-  (r (ReaderT env IO) -> model) ->
+  (r (ModelMonad env) -> model) ->
   handler
 asHandlerCall deps@(Call φ) g = toHandler @mark deps (φ g)

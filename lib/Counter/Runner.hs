@@ -44,6 +44,7 @@ import Servant (BasicAuthData(..))
 import Data.Kind
 import Network.Wai.Handler.Warp (run)
 import Dep.Has
+import Dep.Server
 import Control.Monad.Reader
 import Data.Proxy
 import Data.Aeson
@@ -87,7 +88,7 @@ newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
 
 makeServantRunner ::
   forall m deps env.
-  ( m ~ ReaderT env IO,
+  ( m ~ ModelMonad env,
     Has (CounterServer env) m deps,
     Has (KnobServer env) m deps
   ) =>
