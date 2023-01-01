@@ -208,12 +208,12 @@ instance HasHandlerContext Env where
 -- Think about how to make this function more general, less tied to the concrete
 -- environment, so that it can be put in a library.
 installNamedLogger ::
-  forall x m.
+  forall x accum m.
   Typeable x =>
-  AccumConstructor (Accumulator m) (Deps m) x ->
-  AccumConstructor (Accumulator m) (Deps m) x
+  AccumConstructor accum (Deps m) x ->
+  AccumConstructor accum (Deps m) x
 installNamedLogger f =
-  let bareAccumConstructor :: (Accumulator m, Deps m) -> (Accumulator m, x)
+  let bareAccumConstructor :: (accum, Deps m) -> (accum, x)
       bareAccumConstructor = toBare f
    in fromBare $ bareAccumConstructor . second tweakEnv
   where
