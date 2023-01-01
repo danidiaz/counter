@@ -83,7 +83,7 @@ newtype Conf = Conf {
       deriving anyclass FromJSON
 
 type ServantRunner :: Type -> (Type -> Type) -> Type
-newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
+newtype ServantRunner env m = ServantRunner {runServantServer :: env -> IO () }
 
 makeServantRunner ::
   forall m deps env.
@@ -95,7 +95,7 @@ makeServantRunner ::
   deps -> 
   ServantRunner env m
 makeServantRunner Conf {port} deps = ServantRunner {
-    runServer = \env ->
+    runServantServer = \env ->
         let ServantServer {server} = dep deps
             KnobServer {knobServer} = dep deps
             fullServer = server :<|> \_ -> knobServer

@@ -242,7 +242,7 @@ main = do
         let Identity namedLoggers = traverseH installNamedLogger constructors
         let ((launchers, _), wired :: FinalDepEnv M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
-        let ServantRunner {runServer} = dep wired
+        let ServantRunner {runServantServer} = dep wired
         let initialEnv =
               Env
                 { -- This starts empty, because the handler context is (optially) set by
@@ -252,5 +252,5 @@ main = do
         let runReaderContT c f = runReaderT (runContT c f)
         runReaderContT
           (sequenceA_ launchers)
-          (\() -> liftIO do runServer initialEnv)
+          (\() -> liftIO do runServantServer initialEnv)
           initialEnv
