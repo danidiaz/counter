@@ -30,6 +30,7 @@ import Servant.API
       Get,
       Post )
 import Servant.API.Generic (Generic)
+import Data.Time (UTCTime)
 
 type API = BasicAuth "foo-realm" User :> "counter" :> NamedRoutes CounterCollectionAPI
 
@@ -55,7 +56,10 @@ newtype CounterId = CounterId UUID
 
 data Counter = Counter
   { counterId :: CounterId,
-    counterValue :: Int
+    counterValue :: Int,
+    -- | This field doesn't make much sense here, it was added to test effects
+    -- in DTO conversion. See "Dep.Handler".
+    convertedAt :: UTCTime
   }
   deriving stock (Generic)
   deriving anyclass (FromJSON, ToJSON)

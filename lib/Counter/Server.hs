@@ -27,7 +27,6 @@ module Counter.Server
   )
 where
 
-import Control.Monad.Reader
 import Counter.API
 import Counter.API qualified as API
 import Counter.Model
@@ -37,11 +36,13 @@ import Dep.Has
 import Dep.Handler
 import Servant (ServerError)
 import Servant.Server
-  ( Handler,
+  ( 
     HasServer (ServerT),
     err404,
     err500,
   )
+import Dep.Clock
+import Dep.Has.Call
 
 -- | This is a marker type to identify the servant API.
 --
@@ -66,13 +67,21 @@ instance Monad m => Convertible X m deps Model.CounterId API.CounterId where
   convert = convertCoerce
 
 -- | DTO mapping.
-instance Monad m => Convertible X m deps Model.Counter API.Counter where
-  convert deps Model.Counter {Model.counterId, Model.counterValue} = do
+-- 
+-- This is an example of conversion that performs effects and has dependencies
+-- on other components.
+instance 
+  (Monad m ,
+   Has Clock m deps)
+  => Convertible X m deps Model.Counter API.Counter where
+  convert deps@(Call φ) Model.Counter {Model.counterId, Model.counterValue} = do
     counterId' <- convert @X deps counterId
+    convertedAt <- φ getNow
     pure
       API.Counter
         { API.counterId = counterId',
-          API.counterValue = counterValue
+          API.counterValue = counterValue,
+          convertedAt
         }
 
 -- | DTO mapping.
@@ -102,7 +111,8 @@ makeCounterServer ::
     Has GetCounter m deps,
     Has IncreaseCounter m deps,
     Has DeleteCounter m deps,
-    Has CreateCounter m deps
+    Has CreateCounter m deps,
+    Has Clock m deps
   ) =>
   -- |
   deps ->
