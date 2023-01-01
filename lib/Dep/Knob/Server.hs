@@ -21,17 +21,22 @@
 {-# LANGUAGE UnicodeSyntax #-}
 
 -- | A Servant server for exposing the controls of a 'Knob' as REST endpoints.
-module Dep.Knob.Server (knobNamed, KnobName, KnobMap, SomeKnob, KnobServer (..), makeKnobServer) where
+module Dep.Knob.Server
+  ( knobNamed,
+    KnobName,
+    KnobMap,
+    SomeKnob,
+    KnobServer (..),
+    makeKnobServer,
+  )
+where
 
 import Control.Monad.Except
 import Control.Monad.Reader
-import Control.Monad.Trans.Except
-import Control.Monad.Trans.Reader
 import Data.Aeson
 import Data.Aeson.Key
 import Data.Aeson.Types (parse)
 import Data.Bifunctor
-import Data.Coerce
 import Data.Function ((&))
 import Data.Functor (($>))
 import Data.Kind
@@ -45,12 +50,9 @@ import Dep.Server
 import Servant (NamedRoutes, err400)
 import Servant.API (NoContent (..))
 import Servant.Server
-  ( Handler,
-    HasServer (ServerT),
+  ( HasServer (ServerT),
     err404,
-    err500,
   )
-import Servant.Server.Generic
 
 data SomeKnob m where
   SomeKnob :: forall conf m. (FromJSON conf, ToJSON conf) => Knob conf m -> SomeKnob m

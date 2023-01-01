@@ -34,13 +34,10 @@ import Data.IORef
 import Data.Map.Strict as Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Time (UTCTime, diffUTCTime)
-import Data.Time.Clock
 import Data.Tuple (swap)
 import Dep.Clock
 import Dep.Has
 import Dep.Has.Call
-import Dep.Knob
-import Dep.Knob.IORef qualified
 import Dep.Logger (LogLevel (..), Logger (log))
 import Dep.Repository
   ( Missing (Missing),
@@ -50,6 +47,7 @@ import Dep.Repository
   )
 import GHC.Generics (Generic)
 import Prelude hiding (log)
+import Data.Time.Clock (secondsToNominalDiffTime)
 
 data Conf = Conf
   { checkIntervalSeconds :: Int,

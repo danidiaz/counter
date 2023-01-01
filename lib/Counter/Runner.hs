@@ -40,7 +40,6 @@ import Servant.Server
       BasicAuthCheck(BasicAuthCheck),
       BasicAuthResult(Authorized, Unauthorized),
       Context(..) )
-import Servant (BasicAuthData(..))
 import Data.Kind
 import Network.Wai.Handler.Warp (run)
 import Dep.Has
@@ -50,12 +49,8 @@ import Data.Proxy
 import Data.Aeson
 import GHC.Generics (Generic)
 import Servant.API
-import Servant.API.Generic (Generic, GenericMode (type (:-)))
-import qualified Dep.Logger.HandlerAware
-import Dep.Knob
 import Dep.Knob.API
 import Dep.Knob.Server
-import Dep.Logger (Logger)
 
 -- | The full API adds some "frameworky" endpoints to the "domain" API that
 -- deals with counters.

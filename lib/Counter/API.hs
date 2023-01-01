@@ -16,10 +16,20 @@
 module Counter.API where
 
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Text
-import Data.UUID
+import Data.Text ( Text )
+import Data.UUID ( UUID )
 import Servant.API
-import Servant.API.Generic (Generic, GenericMode (type (:-)))
+    ( FromHttpApiData,
+      BasicAuth,
+      Capture,
+      JSON,
+      GenericMode(type (:-)),
+      NamedRoutes,
+      type (:>),
+      Delete,
+      Get,
+      Post )
+import Servant.API.Generic (Generic)
 
 type API = BasicAuth "foo-realm" User :> "counter" :> NamedRoutes CounterCollectionAPI
 
