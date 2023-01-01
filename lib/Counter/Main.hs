@@ -214,14 +214,14 @@ instance HasHandlerContext Env where
 
 
 -- move this to Dep.Env?
-customizeDepAccum ::
+mapAccumConstructorDep ::
   forall accum deps dep component.
   Typeable component =>
   Lens' deps dep ->
   (TypeRep -> dep -> dep) ->
   AccumConstructor accum deps component ->
   AccumConstructor accum deps component 
-customizeDepAccum l tweak c =
+mapAccumConstructorDep l tweak c =
   let bareAccumConstructor :: (accum, deps) -> (accum, component)
       bareAccumConstructor = toBare c
       tyRep = typeRep (Proxy @component)
@@ -247,7 +247,7 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let namedLoggers = liftAH (customizeDepAccum loggerLens alwaysLogFor) constructors
+        let namedLoggers = liftAH (mapAccumConstructorDep loggerLens alwaysLogFor) constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep deps
