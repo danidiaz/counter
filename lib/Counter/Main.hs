@@ -27,6 +27,7 @@ module Counter.Main (main) where
 
 import Control.Applicative
 import Control.Arrow (Kleisli (..))
+import Control.Lens (Lens', over)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Cont
@@ -34,10 +35,11 @@ import Counter.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
-import Data.Bifunctor (Bifunctor (second))
+import Data.Bifunctor (Bifunctor (bimap))
 import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
+import Data.Functor.Identity (runIdentity)
 import Data.Kind (Type)
 import Data.Proxy
 import Data.Typeable
@@ -72,8 +74,6 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
-import Control.Lens (Lens', (%~))
-import Data.Functor.Identity (runIdentity)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -198,8 +198,8 @@ deriving via Autowired (Deps m) instance Autowireable r_ m (Deps m) => Has r_ m 
 
 loggerLens :: Lens' (Deps m) (Logger m)
 loggerLens f s =
-    -- Artisanal lens.
-    getField @"_logger" s & runIdentity & f <&> \a -> s {_logger = Identity a}
+  -- Artisanal lens.
+  getField @"_logger" s & runIdentity & f <&> \a -> s {_logger = Identity a}
 
 -- | This is the 'ReaderT' environment in which the handlers run.
 newtype Env = Env
@@ -212,30 +212,30 @@ instance HasHandlerContext Env where
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
-
 -- move this to Dep.Env?
-mapAccumConstructorDep ::
-  forall accum deps dep component.
+contramapAccumConstructor ::
+  forall accum deps deps' component.
   Typeable component =>
-  Lens' deps dep ->
-  (TypeRep -> dep -> dep) ->
-  AccumConstructor accum deps component ->
-  AccumConstructor accum deps component 
-mapAccumConstructorDep l tweak c =
-  let bareAccumConstructor :: (accum, deps) -> (accum, component)
+  -- | The @accum@ can't change type, as it's present in both input and output.
+  (TypeRep -> accum -> accum) ->
+  (TypeRep -> deps -> deps') ->
+  AccumConstructor accum deps' component ->
+  AccumConstructor accum deps component
+contramapAccumConstructor tweakAccum tweakDeps c =
+  let bareAccumConstructor :: (accum, deps') -> (accum, component)
       bareAccumConstructor = toBare c
       tyRep = typeRep (Proxy @component)
-   in fromBare $ bareAccumConstructor . second (l %~ tweak tyRep)
+   in fromBare $ bareAccumConstructor . bimap (tweakAccum tyRep) (tweakDeps tyRep)
 
 -- | Move this to Dep.Env ?
 liftAH ::
   forall deps_ phases m.
   (Phased deps_, Typeable phases, Typeable m) =>
-  (forall x . Typeable x => phases x -> phases x) ->
+  (forall x. Typeable x => phases x -> phases x) ->
   deps_ phases m ->
   deps_ phases m
 liftAH tweak =
-  runIdentity . traverseH (Identity . tweak) 
+  runIdentity . traverseH (Identity . tweak)
 
 main :: IO ()
 main = do
@@ -247,7 +247,8 @@ main = do
       -- ALLOCATION PHASE
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
-        let namedLoggers = liftAH (mapAccumConstructorDep loggerLens alwaysLogFor) constructors
+        let namedLoggers = 
+              liftAH (contramapAccumConstructor (const id) (over loggerLens . alwaysLogFor)) constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep deps
