@@ -229,11 +229,11 @@ contramapAccumConstructor tweakAccum tweakDeps c =
 
 -- | Move this to Dep.Env ?
 liftAH ::
-  forall deps_ phases m.
-  (Phased deps_, Typeable phases, Typeable m) =>
-  (forall x. Typeable x => phases x -> phases x) ->
+  forall deps_ phases phases' m.
+  (Phased deps_, Typeable phases, Typeable phases', Typeable m) =>
+  (forall x. Typeable x => phases x -> phases' x) ->
   deps_ phases m ->
-  deps_ phases m
+  deps_ phases' m
 liftAH tweak =
   runIdentity . traverseH (Identity . tweak)
 
