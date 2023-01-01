@@ -51,14 +51,15 @@ import Servant.Server
     ServerError,
   )
 
--- | Converts some monadic function into something usable as a Servant handler.
---
+-- | Converts some monadic function from the model into something usable as a
+-- Servant handler.
+-- 
 -- For this to work, the monadic function must use @ReaderT@ over @IO@ for its
 -- effects.
---
--- Also, the required instances of 'FromDTO' must exist for its arguments, the
--- required instances of 'ToDTO' must exist for its result value, and the
--- required instances of 'ToServerError' must exist for its errors.
+-- 
+-- Also, the required instances of 'Convertible' must exist for its arguments
+-- and result value, and the required instances of 'ToServerError' must exist
+-- for its errors.
 class
   ToHandler
     mark
@@ -69,24 +70,24 @@ class
     modelResult
     model
     (handlerArgs :: [Type])
-    handlerSuccess
+    handlerResult
     handler
     | model -> modelArgs modelResult,
       modelResult -> modelErrors modelSuccess,
-      handler -> handlerArgs handlerSuccess
+      handler -> handlerArgs handlerResult
   where
   toHandler :: deps -> model -> handler
 
 instance
-  ( modelM ~ ReaderT env IO,
-    Multicurryable (->) modelArgs (modelM modelResult) model,
+  ( modelMonad ~ ReaderT env IO,
     Multicurryable Either modelErrors modelSuccess modelResult,
-    handlerM ~ ReaderT env Handler,
-    Multicurryable (->) handlerArgs (handlerM handlerSuccess) handler,
+    Multicurryable (->) modelArgs (modelMonad modelResult) model,
+    handlerMonad ~ ReaderT env Handler,
+    Multicurryable (->) handlerArgs (handlerMonad handlerResult) handler,
     --
-    AllZip (Convertible mark modelM deps) handlerArgs modelArgs,
-    All (ToServerError mark modelM deps) modelErrors,
-    Convertible mark modelM deps modelSuccess handlerSuccess
+    AllZip (Convertible mark modelMonad deps) handlerArgs modelArgs,
+    All (ToServerError mark modelMonad deps) modelErrors,
+    Convertible mark modelMonad deps modelSuccess handlerResult
   ) =>
   ToHandler
     mark
@@ -97,37 +98,37 @@ instance
     modelResult
     model
     (handlerArgs :: [Type])
-    handlerSuccess
+    handlerResult
     handler
   where
   toHandler deps model =
     multicurry @(->) @handlerArgs $ \handlerArgs ->
-      let modelArgs :: modelM (NP I modelArgs)
+      let modelArgs :: modelMonad (NP I modelArgs)
           modelArgs =
             sequence_NP $
               trans_NP
-                (Proxy @(Convertible mark modelM deps))
+                (Proxy @(Convertible mark modelMonad deps))
                 (\(I x) -> convert @mark deps x)
                 handlerArgs
           uncurriedModel = multiuncurry @(->) @modelArgs model
-          modelTip :: modelM (Either (NS I modelErrors) modelSuccess)
+          modelTip :: modelMonad (Either (NS I modelErrors) modelSuccess)
           modelTip = do
             args <- modelArgs
             multiuncurry @Either @modelErrors @modelSuccess <$> uncurriedModel args
-          transformErrors :: NS I modelErrors -> modelM ServerError
+          transformErrors :: NS I modelErrors -> modelMonad ServerError
           transformErrors errors = do
             mappedErrors :: NS (K ServerError) modelErrors <-
               sequence'_NS $
                 cmap_NS
-                  (Proxy @(ToServerError mark modelM deps))
+                  (Proxy @(ToServerError mark modelMonad deps))
                   (\(I e) -> Comp $ K <$> convert @mark deps e)
                   errors
             pure $ collapse_NS mappedErrors
-          transformSuccess :: modelSuccess -> modelM handlerSuccess
-          transformSuccess = convert @mark @modelM @deps @modelSuccess @handlerSuccess deps
-          transformMonad :: forall x. modelM (Either ServerError x) -> handlerM x
+          transformSuccess :: modelSuccess -> modelMonad handlerResult
+          transformSuccess = convert @mark @modelMonad @deps @modelSuccess @handlerResult deps
+          transformMonad :: forall x. modelMonad (Either ServerError x) -> handlerMonad x
           transformMonad = coerce
-          handlerTip :: handlerM handlerSuccess
+          handlerTip :: handlerMonad handlerResult
           handlerTip = transformMonad do
             tip <- modelTip
             case tip of
@@ -165,7 +166,7 @@ asHandlerCall ::
     modelResult
     model
     (handlerArgs :: [Type])
-    handlerSuccess
+    handlerResult
     handler.
   ( ToHandler
       mark
@@ -176,7 +177,7 @@ asHandlerCall ::
       modelResult
       model
       (handlerArgs :: [Type])
-      handlerSuccess
+      handlerResult
       handler,
     Has r (ReaderT env IO) deps
   ) =>
