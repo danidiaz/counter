@@ -68,6 +68,7 @@ import Dep.Has.Call
 import Dep.Knob
 import Dep.Knob.IORef
 import Dep.Knob.Server
+import Dep.Server
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.ReaderAdvice
@@ -86,7 +87,7 @@ import Data.Typeable
 -- DI contexts move through a series of phases while they are being build.
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
-data Deps phase m = Deps
+data Deps_ phase m = Deps
   { _clock :: phase (Clock m),
     _logger :: phase (Logger m),
     _counterRepository :: phase (Model.CounterRepository m),
@@ -101,7 +102,7 @@ data Deps phase m = Deps
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)
 
-type FinalDepEnv m = Deps Identity m
+type Deps m = Deps_ Identity m
 
 -- | An allocation phase in which components allocate some resource that they'll
 -- use during operation.
@@ -113,16 +114,16 @@ type Accumulator m = ([ContT () m ()], KnobMap m)
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
 -- context.
-type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (Accumulator m) (FinalDepEnv m)
+type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (Accumulator m) (Deps m)
 
 -- Monad used by the model.
 type M :: Type -> Type
-type M = ReaderT Env IO
+type M = ModelMonad Env
 
 -- | >>> :kind! Bare (Phases M (Logger M))
 -- Bare (Phases M (Logger M)) :: *
-deps :: Deps (Phases M) M
-deps =
+deps_ :: Deps_ (Phases M) M
+deps_ =
   Deps
     { _clock = purePhases $ noAccum $ \_ -> Dep.Clock.Real.make,
       _logger =
@@ -131,7 +132,7 @@ deps =
             do
               knobRef <- Dep.Knob.IORef.alloc conf
               pure $ Dep.Knob.IORef.make conf knobRef
-              <&> \knob ~(_, _ :: FinalDepEnv M) ->
+              <&> \knob ~(_, _ :: Deps M) ->
                 Dep.Logger.HandlerAware.make (inspectKnob knob)
                   & (,) (mempty, knobNamed "logger" knob),
       _counterRepository =
@@ -141,7 +142,7 @@ deps =
               knobRef <- Dep.Knob.IORef.alloc conf
               mapRef <- Dep.Repository.Memory.alloc
               pure (Dep.Knob.IORef.make conf knobRef, mapRef)
-            <&> \(knob, mapRef) ~(_, deps :: FinalDepEnv M) ->
+            <&> \(knob, mapRef) ~(_, deps :: Deps M) ->
               Dep.Repository.Memory.make Data.Model.lastUpdated (inspectKnob knob) mapRef deps & \case
                 -- https://twitter.com/chris__martin/status/1586066539039453185
                 (launcher, repo@Repository {withResource}) ->
@@ -188,18 +189,18 @@ deps =
   where
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
-    purePhases :: forall r m. ((Accumulator m, FinalDepEnv m) -> (Accumulator m, r m)) -> Phases m (r m)
+    purePhases :: forall r m. ((Accumulator m, Deps m) -> (Accumulator m, r m)) -> Phases m (r m)
     purePhases f = fromBare $ noConf <&> \_ -> noAlloc <&> \() -> f
     noAccum :: forall a b w. Monoid w => (a -> b) -> (w, a) -> (w, b)
     noAccum f ~(_, a) = (mempty, f a)
-    logExtraMessage :: FinalDepEnv M -> String -> forall r. Advice Top Env IO r
+    logExtraMessage :: Deps M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
       action
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
-deriving via Autowired (FinalDepEnv m) instance Autowireable r_ m (FinalDepEnv m) => Has r_ m (FinalDepEnv m)
+deriving via Autowired (Deps      m) instance Autowireable r_ m (Deps m) => Has r_ m (Deps m)
 
 -- | This is the 'ReaderT' environment in which the handlers run.
 newtype Env = Env
@@ -215,14 +216,14 @@ instance HasHandlerContext Env where
 -- Think about how to make this function more general, less tied to the concrete
 -- environment, so that it can be put in a library.
 installNamedLogger :: forall x m . Typeable x => 
-  AccumConstructor (Accumulator m) (FinalDepEnv m) x ->
-  Identity (AccumConstructor (Accumulator m) (FinalDepEnv m) x)
+  AccumConstructor (Accumulator m) (Deps m) x ->
+  Identity (AccumConstructor (Accumulator m) (Deps m) x)
 installNamedLogger f = 
   let 
       f' = toBare f 
       f'' accEnv = f' (fmap tweakEnv accEnv)
       f''' = fromBare f''
-      tweakEnv :: FinalDepEnv m -> FinalDepEnv m
+      tweakEnv :: Deps m -> Deps m
       tweakEnv deps = deps { _logger = deps & _logger <&> tweakLogger }
       tweakLogger :: Logger m -> Logger m
       tweakLogger Logger { logFor } = Logger { log = logFor (Just tyRep), logFor }
@@ -232,7 +233,7 @@ installNamedLogger f =
 main :: IO ()
 main = do
   -- CONFIGURATION PHASE
-  parseResult <- parseYamlFile (pullPhase deps) "conf.yaml"
+  parseResult <- parseYamlFile (pullPhase deps_) "conf.yaml"
   case parseResult of
     Left err -> print err
     Right allocators -> do
@@ -240,9 +241,9 @@ main = do
       runContT (pullPhase allocators) \constructors -> do
         -- WIRING PHASE
         let Identity namedLoggers = traverseH installNamedLogger constructors
-        let ((launchers, _), wired :: FinalDepEnv M) = fixEnvAccum namedLoggers
+        let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
-        let ServantRunner {runServer} = dep wired
+        let ServantRunner {runServer} = dep deps
         let initialEnv =
               Env
                 { -- This starts empty, because the handler context is (optially) set by
