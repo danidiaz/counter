@@ -108,7 +108,7 @@ I wanted to scratch the following itches:
     - BUT! Components in the model *should know nothing about handlers, or Servant*. 
         - Only the logger component is allowed to know that handlers exist.
 
-- I aslo want to tag each log message with the component that emitted it.
+- I also want to tag each log message with the component that emitted it.
 Preferably, this should be done automatically.
 
 - Each component should be in charge of parsing its *own* piece of the
@@ -117,16 +117,16 @@ parsers should be aggregated.
 
 - Components should be able to "register" asynchronous background tasks.
 
-Registering the background tasks should be done when adding the corresponding
+  Registering the background tasks should be done when adding the corresponding
 component to the dependency injection context, and in the same region of code. 
 This minimizes the risk of forgetting to register tasks elsewhere.
 
 - Provide "control" HTTP endpoints for important components, that allow admins
 to inspect and set their configurations at runtime.
 
-In the spirit of Spring Boot's "actuator" framework.
+  In the spirit of Spring Boot's "actuator" framework.
 
-Hopefully this should be achieved witout a lot of boilerplate.
+  Hopefully this should be achieved witout a lot of boilerplate.
 
 Links
 -----
