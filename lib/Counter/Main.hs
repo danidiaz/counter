@@ -79,7 +79,7 @@ import Dep.Env (Constructor)
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
 --
--- DI contexts move through a series of phases while they are being build.
+-- DI contexts move through a series of phases while they are being built.
 -- Phases are represented as 'Composition's (nestings) of applicative functors
 -- that wrap each component.
 data Deps_ phase m = Deps
