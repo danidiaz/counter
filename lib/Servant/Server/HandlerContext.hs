@@ -13,8 +13,14 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | A server typeclass for servant servers with named routes.
-
+-- | A typeclass for servant servers with named routes.
+-- 
+-- The structure of the routes is reflected into 'HandlerContext' values, which
+-- are them communicated to the 'ReaderT' environment of each handler, using
+-- 'local' 
+-- 
+-- Handlers can use the 'HandlerContext' info to provide extra context during
+-- logging.
 module Servant.Server.HandlerContext (
   FieldName,
   HandlerContext,
