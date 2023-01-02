@@ -46,7 +46,7 @@ type HandlerContext = [(TypeRep, FieldName)]
 
 -- | Reader environments that keep track of a 'HandlerContext'.  
 class HasHandlerContext e where
-  -- | A lens from the environment to the call stack.
+  -- | A lens from the environment to the current route.
   handlerContext :: Lens' e HandlerContext
 
 -- | The trivial case, useful when 'HandlerContext' is the environment type
