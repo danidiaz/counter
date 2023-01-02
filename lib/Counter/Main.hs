@@ -35,7 +35,6 @@ import Counter.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
-import Data.Bifunctor (Bifunctor (bimap))
 import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
@@ -74,6 +73,8 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
+import Data.Bifunctor (second)
+import Dep.Env (Constructor)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -212,20 +213,32 @@ instance HasHandlerContext Env where
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
+
+-- move this to Dep.Env?
+contramapConstructor ::
+  forall deps deps' component.
+  Typeable component =>
+  (TypeRep -> deps -> deps') ->
+  Constructor deps' component ->
+  Constructor deps component
+contramapConstructor tweak c =
+  let bareConstructor :: deps' -> component
+      bareConstructor = toBare c
+      tyRep = typeRep (Proxy @component)
+   in fromBare $ bareConstructor . tweak tyRep
+
 -- move this to Dep.Env?
 contramapAccumConstructor ::
   forall accum deps deps' component.
   Typeable component =>
-  -- | The @accum@ can't change type, as it's present in both input and output.
-  (TypeRep -> accum -> accum) ->
   (TypeRep -> deps -> deps') ->
   AccumConstructor accum deps' component ->
   AccumConstructor accum deps component
-contramapAccumConstructor tweakAccum tweakDeps c =
+contramapAccumConstructor tweak c =
   let bareAccumConstructor :: (accum, deps') -> (accum, component)
       bareAccumConstructor = toBare c
       tyRep = typeRep (Proxy @component)
-   in fromBare $ bareAccumConstructor . bimap (tweakAccum tyRep) (tweakDeps tyRep)
+   in fromBare $ bareAccumConstructor . second (tweak tyRep)
 
 -- | Move this to Dep.Env ?
 liftAH ::
@@ -249,7 +262,7 @@ main = do
         -- WIRING PHASE
         let namedLoggers =
               liftAH
-                (contramapAccumConstructor (const id) (\tyRep -> loggerLens %~ alwaysLogFor tyRep))
+                (contramapAccumConstructor (\tyRep -> loggerLens %~ alwaysLogFor tyRep))
                 constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
