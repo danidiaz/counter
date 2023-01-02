@@ -35,6 +35,7 @@ import Counter.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
+import Data.Bifunctor (second)
 import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
@@ -45,19 +46,7 @@ import Data.Typeable
 import Dep.Clock
 import Dep.Clock.Real qualified
 import Dep.Conf
-import Dep.Env
-  ( AccumConstructor,
-    Autowireable,
-    Autowired (..),
-    Compose (Compose),
-    FieldsFindableByType,
-    Identity (Identity),
-    Phased (traverseH),
-    fixEnvAccum,
-    fromBare,
-    pullPhase,
-    toBare,
-  )
+import Dep.Env (AccumConstructor, Autowireable, Autowired (..), Compose (Compose), Constructor, FieldsFindableByType, Identity (Identity), Phased (traverseH), fixEnvAccum, fromBare, pullPhase, toBare)
 import Dep.Has (Has (dep))
 import Dep.Has.Call
 import Dep.Knob
@@ -73,8 +62,6 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
-import Data.Bifunctor (second)
-import Dep.Env (Constructor)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -109,7 +96,8 @@ type Accumulator m = ([ContT () m ()], KnobMap m)
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
 -- context.
-type Phases m = Configurator `Compose` Allocator `Compose` AccumConstructor (Accumulator m) (Deps m)
+type Phases m =
+  Configurator `Compose` Allocator `Compose` AccumConstructor (Accumulator m) (Deps m)
 
 -- Monad used by the model.
 type M :: Type -> Type
@@ -212,7 +200,6 @@ instance HasHandlerContext Env where
   handlerContext f s =
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
-
 
 -- move this to Dep.Env?
 contramapConstructor ::
