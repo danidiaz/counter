@@ -50,9 +50,7 @@ class HasHandlerContext e where
   handlerContext :: Lens' e HandlerContext
 
 -- | The trivial case, useful when 'HandlerContext' is the environment type
-
 -- of a 'Control.Monad.Reader.ReaderT'.
-
 instance HasHandlerContext HandlerContext where
   handlerContext = id
 
