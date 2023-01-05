@@ -151,8 +151,8 @@ deps_ =
       --              call log "Extra log message added by instrumentation"
       --              withResource rid
       --          },
-      _getCounter = purePhases $ AccumConstructor \(~(_,deps)) -> (mempty, makeGetCounter deps),
-      _increaseCounter = purePhases $ AccumConstructor \(~(_,deps)) -> (mempty,makeIncreaseCounter deps), 
+      _getCounter = purePhases $ _accumConstructor_ makeGetCounter,
+      _increaseCounter = purePhases $ _accumConstructor_ makeIncreaseCounter, 
       _deleteCounter = purePhases $ _accumConstructor_ makeDeleteCounter,
       _createCounter = purePhases $ _accumConstructor_ makeCreateCounter,
       _server =
@@ -162,11 +162,10 @@ deps_ =
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
         purePhases $
-          AccumConstructor \(~(_,deps)) ->
+          _accumConstructor_ \deps ->
             makeCounterServer deps & \case
               server@(CounterServer {counterServer}) ->
-                server {counterServer = addHandlerContext [] counterServer}
-                & (,) mempty,
+                server {counterServer = addHandlerContext [] counterServer},
       _knobServer = purePhases $ AccumConstructor \(~((_, knobs), _)) -> (mempty,makeKnobServer knobs),
       _runner =
         fromBare $
