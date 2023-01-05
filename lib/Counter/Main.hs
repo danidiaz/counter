@@ -46,12 +46,14 @@ import Data.Typeable
 import Dep.Clock
 import Dep.Clock.Real qualified
 import Dep.Conf
-import Dep.Env (AccumConstructor, Autowireable, Autowired (..), Compose (Compose), Constructor, FieldsFindableByType, Identity (Identity), Phased (traverseH), fixEnvAccum, fromBare, pullPhase, toBare)
+-- import Dep.Env (AccumConstructor, Autowireable, Autowired (..), Compose (Compose), Constructor, FieldsFindableByType, Identity (Identity), Phased (traverseH), fixEnvAccum, fromBare, pullPhase, toBare)
+import Dep.Env hiding (AccumConstructor, Constructor, constructor, fixEnv, fixEnvAccum)
 import Dep.Has (Has (dep))
 import Dep.Has.Call
 import Dep.Knob
 import Dep.Knob.IORef
 import Dep.Knob.Server
+import Dep.Constructor
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.ReaderAdvice
@@ -108,14 +110,15 @@ type M = RIO Env
 deps_ :: Deps_ (Phases M) M
 deps_ =
   Deps
-    { _clock = purePhases $ noAccum $ \_ -> Dep.Clock.Real.make,
+    { _clock = purePhases $ AccumConstructor $ \(~(_,_)) -> (mempty, Dep.Clock.Real.make),
       _logger =
         fromBare $
           underField "logger" <&> \conf ->
             do
               knobRef <- Dep.Knob.IORef.alloc conf
               pure $ Dep.Knob.IORef.make conf knobRef
-              <&> \knob ~(_, _ :: Deps M) ->
+              <&> \knob ->
+              AccumConstructor \(~(_,_ :: Deps M)) ->
                 Dep.Logger.HandlerAware.make (inspectKnob knob)
                   & (,) (mempty, knobNamed "logger" knob),
       _counterRepository =
@@ -125,7 +128,8 @@ deps_ =
               knobRef <- Dep.Knob.IORef.alloc conf
               mapRef <- Dep.Repository.Memory.alloc
               pure (Dep.Knob.IORef.make conf knobRef, mapRef)
-              <&> \(knob, mapRef) ~(_, deps :: Deps M) ->
+              <&> \(knob, mapRef) ->
+                AccumConstructor \(~(_,deps :: Deps M)) ->
                 Dep.Repository.Memory.make Model.lastUpdated (inspectKnob knob) mapRef deps & \case
                   -- https://twitter.com/chris__martin/status/1586066539039453185
                   (launcher, repo@Repository {withResource}) ->
@@ -147,10 +151,10 @@ deps_ =
       --              call log "Extra log message added by instrumentation"
       --              withResource rid
       --          },
-      _getCounter = purePhases $ noAccum makeGetCounter,
-      _increaseCounter = purePhases $ noAccum makeIncreaseCounter,
-      _deleteCounter = purePhases $ noAccum makeDeleteCounter,
-      _createCounter = purePhases $ noAccum makeCreateCounter,
+      _getCounter = purePhases $ AccumConstructor \(~(_,deps)) -> (mempty, makeGetCounter deps),
+      _increaseCounter = purePhases $ AccumConstructor \(~(_,deps)) -> (mempty,makeIncreaseCounter deps), 
+      _deleteCounter = purePhases $ _accumConstructor_ makeDeleteCounter,
+      _createCounter = purePhases $ _accumConstructor_ makeCreateCounter,
       _server =
         -- Is this the best place to call 'addHandlerContext'?  It could be done
         -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
@@ -158,24 +162,23 @@ deps_ =
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
         purePhases $
-          noAccum \deps ->
+          AccumConstructor \(~(_,deps)) ->
             makeCounterServer deps & \case
               server@(CounterServer {counterServer}) ->
-                server {counterServer = addHandlerContext [] counterServer},
-      _knobServer = purePhases \ ~((_, knobs), _) -> (mempty, makeKnobServer knobs),
+                server {counterServer = addHandlerContext [] counterServer}
+                & (,) mempty,
+      _knobServer = purePhases $ AccumConstructor \(~((_, knobs), _)) -> (mempty,makeKnobServer knobs),
       _runner =
         fromBare $
           underField "runner" <&> \conf ->
             noAlloc <&> \() ->
-              noAccum \deps -> makeServantRunner conf deps
+              _accumConstructor_ $ makeServantRunner conf 
     }
   where
     noAlloc :: ContT () IO ()
     noAlloc = pure ()
-    purePhases :: forall r m. ((Accumulator m, Deps m) -> (Accumulator m, r m)) -> Phases m (r m)
+    purePhases :: forall r m. AccumConstructor (Accumulator m) (Deps m) (r m) -> Phases m (r m)
     purePhases f = fromBare $ noConf <&> \_ -> noAlloc <&> \() -> f
-    noAccum :: forall a b w. Monoid w => (a -> b) -> (w, a) -> (w, b)
-    noAccum f ~(_, a) = (mempty, f a)
     logExtraMessage :: Deps M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
@@ -201,42 +204,6 @@ instance HasHandlerContext Env where
     -- Artisanal lens.
     getField @"_handlerContext" s & f <&> \a -> s {_handlerContext = a}
 
--- move this to Dep.Env?
-contramapConstructor ::
-  forall deps deps' component.
-  Typeable component =>
-  (TypeRep -> deps -> deps') ->
-  Constructor deps' component ->
-  Constructor deps component
-contramapConstructor tweak c =
-  let bareConstructor :: deps' -> component
-      bareConstructor = toBare c
-      tyRep = typeRep (Proxy @component)
-   in fromBare $ bareConstructor . tweak tyRep
-
--- move this to Dep.Env?
-contramapAccumConstructor ::
-  forall accum deps deps' component.
-  Typeable component =>
-  (TypeRep -> deps -> deps') ->
-  AccumConstructor accum deps' component ->
-  AccumConstructor accum deps component
-contramapAccumConstructor tweak c =
-  let bareAccumConstructor :: (accum, deps') -> (accum, component)
-      bareAccumConstructor = toBare c
-      tyRep = typeRep (Proxy @component)
-   in fromBare $ bareAccumConstructor . second (tweak tyRep)
-
--- | Move this to Dep.Env ?
-liftAH ::
-  forall deps_ phases phases' m.
-  (Phased deps_, Typeable phases, Typeable phases', Typeable m) =>
-  (forall x. Typeable x => phases x -> phases' x) ->
-  deps_ phases m ->
-  deps_ phases' m
-liftAH tweak =
-  runIdentity . traverseH (Identity . tweak)
-
 main :: IO ()
 main = do
   -- CONFIGURATION PHASE
@@ -249,7 +216,7 @@ main = do
         -- WIRING PHASE
         let namedLoggers =
               liftAH
-                (contramapAccumConstructor (\tyRep -> loggerLens %~ alwaysLogFor tyRep))
+                (lmapAccumConstructor (\tyRep -> loggerLens %~ alwaysLogFor tyRep))
                 constructors
         let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
