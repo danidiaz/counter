@@ -110,7 +110,7 @@ type M = RIO Env
 deps_ :: Deps_ (Phases M) M
 deps_ =
   Deps
-    { _clock = purePhases $ AccumConstructor $ \(~(_,_)) -> (mempty, Dep.Clock.Real.make),
+    { _clock = purePhases $ _accumConstructor_ $ \_ -> Dep.Clock.Real.make,
       _logger =
         fromBare $
           underField "logger" <&> \conf ->
