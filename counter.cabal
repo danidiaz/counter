@@ -37,6 +37,7 @@ library lib-counter
                       Dep.Repository
                       Dep.Repository.Memory
                       Dep.Has.Call
+                      Dep.Phases
                       Dep.Conf
                       Dep.Handler
                       Dep.Server

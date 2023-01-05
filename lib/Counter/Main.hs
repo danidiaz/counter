@@ -20,6 +20,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE QualifiedDo #-}
 
 -- | Hidden inside this module lies the dependency injection context, where all
 -- the different components of the application are brought together.
@@ -39,6 +40,7 @@ import Data.Bifunctor (second)
 import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
+import Dep.Phases
 import Data.Functor.Identity (runIdentity)
 import Data.Kind (Type)
 import Data.Proxy
@@ -63,7 +65,9 @@ import Dep.Server
 import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
+import Data.Coerce
 import Prelude hiding (log)
+import Data.Aeson (FromJSON)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -111,36 +115,32 @@ deps_ :: Deps_ (Phases M) M
 deps_ =
   Deps
     { _clock = purePhases $ _accumConstructor_ \_ -> Dep.Clock.Real.make,
-      _logger =
-        fromBare $
-          underField "logger" <&> \conf ->
-            do
+      _logger = Dep.Phases.do
+          conf <- underField "logger" 
+          knob <- do
               knobRef <- Dep.Knob.IORef.alloc conf
-              pure $ Dep.Knob.IORef.make conf knobRef
-              <&> \knob ->
-              _accumConstructor \_ ->
-                Dep.Logger.HandlerAware.make (inspectKnob knob)
-                  & (,) (mempty, knobNamed "logger" knob),
-      _counterRepository =
-        fromBare $
-          underField "repository" <&> \conf ->
-            do
+              pure @Allocator $ Dep.Knob.IORef.make conf knobRef
+          _accumConstructor \_ ->
+            Dep.Logger.HandlerAware.make (inspectKnob knob)
+              & (,) (mempty, knobNamed "logger" knob),
+      _counterRepository = Dep.Phases.do
+          conf <- underField "repository" 
+          (knob, mapRef) <- do
               knobRef <- Dep.Knob.IORef.alloc conf
               mapRef <- Dep.Repository.Memory.alloc
-              pure (Dep.Knob.IORef.make conf knobRef, mapRef)
-              <&> \(knob, mapRef) ->
-                _accumConstructor \deps ->
-                Dep.Repository.Memory.make Model.lastUpdated (inspectKnob knob) mapRef deps & \case
-                  -- https://twitter.com/chris__martin/status/1586066539039453185
-                  (launcher, repo@Repository {withResource}) ->
-                    repo
-                      { withResource =
-                          withResource -- Here we instrument a single method
-                            & advise (logExtraMessage deps "Extra log message added by instrumentation")
-                      }
-                      -- Here we add additional instrumentation for all the methods in the component.
-                      & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
-                      & (,) ([launcher], knobNamed "repository" knob),
+              pure @Allocator (Dep.Knob.IORef.make conf knobRef, mapRef)
+          _accumConstructor \deps ->
+            Dep.Repository.Memory.make Model.lastUpdated (inspectKnob knob) mapRef deps & \case
+              -- https://twitter.com/chris__martin/status/1586066539039453185
+              (launcher, repo@Repository {withResource}) ->
+                repo
+                  { withResource =
+                      withResource -- Here we instrument a single method
+                        & advise (logExtraMessage deps "Extra log message added by instrumentation")
+                  }
+                  -- Here we add additional instrumentation for all the methods in the component.
+                  & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
+                  & (,) ([launcher], knobNamed "repository" knob),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -167,11 +167,10 @@ deps_ =
               server@(CounterServer {counterServer}) ->
                 server {counterServer = addHandlerContext [] counterServer},
       _knobServer = purePhases $ accumConstructor_ \(_, knobs) _ -> makeKnobServer knobs,
-      _runner =
-        fromBare $
-          underField "runner" <&> \conf ->
-            noAlloc <&> \() ->
-              _accumConstructor_ $ makeServantRunner conf 
+      _runner = Dep.Phases.do
+          conf <- underField "runner"
+          noAlloc
+          _accumConstructor_ $ makeServantRunner conf 
     }
   where
     noAlloc :: ContT () IO ()
@@ -182,6 +181,10 @@ deps_ =
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
       action
+--    confWithoutAlloc :: FromJSON a => String -> (Configurator `Compose` Allocator) a
+--    confWithoutAlloc name = Dep.Phases.do
+--      conf <- underField name
+--      pure conf
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
@@ -231,3 +234,11 @@ main = do
           (sequenceA_ launchers)
           (\() -> liftIO do runServer initialEnv)
           initialEnv
+
+-- recompose :: forall phases phases' bare. (
+--   Coercible phases bare, 
+--   Coercible phases' bare,
+--   Bare phases ~ bare,
+--   Bare phases' ~ bare
+--   ) => phases -> phases'
+-- recompose = fromBare @phases' . toBare @phases
