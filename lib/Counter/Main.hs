@@ -118,7 +118,7 @@ deps_ =
               knobRef <- Dep.Knob.IORef.alloc conf
               pure $ Dep.Knob.IORef.make conf knobRef
               <&> \knob ->
-              AccumConstructor \(~(_,_ :: Deps M)) ->
+              _accumConstructor \_ ->
                 Dep.Logger.HandlerAware.make (inspectKnob knob)
                   & (,) (mempty, knobNamed "logger" knob),
       _counterRepository =
@@ -129,7 +129,7 @@ deps_ =
               mapRef <- Dep.Repository.Memory.alloc
               pure (Dep.Knob.IORef.make conf knobRef, mapRef)
               <&> \(knob, mapRef) ->
-                AccumConstructor \(~(_,deps :: Deps M)) ->
+                _accumConstructor \deps ->
                 Dep.Repository.Memory.make Model.lastUpdated (inspectKnob knob) mapRef deps & \case
                   -- https://twitter.com/chris__martin/status/1586066539039453185
                   (launcher, repo@Repository {withResource}) ->
