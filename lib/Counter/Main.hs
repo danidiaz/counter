@@ -110,7 +110,7 @@ type M = RIO Env
 deps_ :: Deps_ (Phases M) M
 deps_ =
   Deps
-    { _clock = purePhases $ _accumConstructor_ $ \_ -> Dep.Clock.Real.make,
+    { _clock = purePhases $ _accumConstructor_ \_ -> Dep.Clock.Real.make,
       _logger =
         fromBare $
           underField "logger" <&> \conf ->
@@ -166,7 +166,7 @@ deps_ =
             makeCounterServer deps & \case
               server@(CounterServer {counterServer}) ->
                 server {counterServer = addHandlerContext [] counterServer},
-      _knobServer = purePhases $ AccumConstructor \(~((_, knobs), _)) -> (mempty,makeKnobServer knobs),
+      _knobServer = purePhases $ accumConstructor_ \(_, knobs) _ -> makeKnobServer knobs,
       _runner =
         fromBare $
           underField "runner" <&> \conf ->
