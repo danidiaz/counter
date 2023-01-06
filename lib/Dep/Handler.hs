@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 -- | A bunch of helpers for turning functions from the model (which should be
 -- innocent from any web framework) into Servant handlers.
@@ -72,7 +73,7 @@ import Servant.Server
 class
   ToHandler
     mark
-    deps
+    env
     (modelArgs :: [Type])
     (modelErrors :: [Type])
     modelSuccess
@@ -85,22 +86,21 @@ class
       modelResult -> modelErrors modelSuccess,
       handler -> handlerArgs handlerResult
   where
-  toHandler :: deps -> model -> handler
+  toHandler :: mark (RIO env) -> model -> handler
 
 instance
-  ( modelMonad ~ RIO env,
+  ( 
     Multicurryable Either modelErrors modelSuccess modelResult,
-    Multicurryable (->) modelArgs (modelMonad modelResult) model,
-    handlerMonad ~ RHandler env,
-    Multicurryable (->) handlerArgs (handlerMonad handlerResult) handler,
+    Multicurryable (->) modelArgs (RIO env modelResult) model,
+    Multicurryable (->) handlerArgs (RHandler env handlerResult) handler,
     --
-    AllZip (Convertible mark modelMonad deps) handlerArgs modelArgs,
-    All (ToServerError mark modelMonad deps) modelErrors,
-    Convertible mark modelMonad deps modelSuccess handlerResult
+    AllZip (Convertible mark) handlerArgs modelArgs,
+    All (ToServerError mark) modelErrors,
+    Convertible mark modelSuccess handlerResult
   ) =>
   ToHandler
     mark
-    deps
+    env
     (modelArgs :: [Type])
     (modelErrors :: [Type])
     modelSuccess
@@ -110,34 +110,34 @@ instance
     handlerResult
     handler
   where
-  toHandler deps model =
+  toHandler mark model =
     multicurry @(->) @handlerArgs $ \handlerArgs ->
-      let modelArgs :: modelMonad (NP I modelArgs)
+      let modelArgs :: RIO env (NP I modelArgs)
           modelArgs =
             sequence_NP $
               trans_NP
-                (Proxy @(Convertible mark modelMonad deps))
-                (\(I x) -> convert @mark deps x)
+                (Proxy @(Convertible mark))
+                (\(I x) -> convert mark x)
                 handlerArgs
           uncurriedModel = multiuncurry @(->) @modelArgs model
-          modelTip :: modelMonad (Either (NS I modelErrors) modelSuccess)
+          modelTip :: RIO env (Either (NS I modelErrors) modelSuccess)
           modelTip = do
             args <- modelArgs
             multiuncurry @Either @modelErrors @modelSuccess <$> uncurriedModel args
-          transformErrors :: NS I modelErrors -> modelMonad ServerError
+          transformErrors :: NS I modelErrors -> RIO env ServerError
           transformErrors errors = do
             mappedErrors :: NS (K ServerError) modelErrors <-
               sequence'_NS $
                 cmap_NS
-                  (Proxy @(ToServerError mark modelMonad deps))
-                  (\(I e) -> Comp $ K <$> convert @mark deps e)
+                  (Proxy @(ToServerError mark))
+                  (\(I e) -> Comp $ K <$> convert mark e)
                   errors
             pure $ collapse_NS mappedErrors
-          transformSuccess :: modelSuccess -> modelMonad handlerResult
-          transformSuccess = convert @mark @modelMonad @deps @modelSuccess @handlerResult deps
-          transformMonad :: forall x. modelMonad (Either ServerError x) -> handlerMonad x
+          transformSuccess :: modelSuccess -> RIO env handlerResult
+          transformSuccess = convert mark
+          transformMonad :: forall x. RIO env (Either ServerError x) -> RHandler env x
           transformMonad = coerce
-          handlerTip :: handlerMonad handlerResult
+          handlerTip :: RHandler env handlerResult
           handlerTip = transformMonad do
             tip <- modelTip
             case tip of
@@ -145,25 +145,27 @@ instance
               Right s -> Right <$> transformSuccess s
        in handlerTip
 
-class Convertible mark m deps source target where
-  convert :: deps -> source -> m target
 
-convertPure :: Applicative m => (source -> target) -> deps -> source -> m target
+type Convertible:: ((Type -> Type) -> Type) -> Type -> Type -> Constraint
+class Convertible mark source target where
+  convert:: forall m . mark m -> source -> m target
+
+convertPure:: Applicative m => (source -> target) -> deps -> source -> m target
 convertPure f _ source = pure (f source)
 
-convertConst :: Applicative m => target -> deps -> source -> m target
+convertConst:: Applicative m => target -> deps -> source -> m target
 convertConst t _ _ = pure t
 
-convertId :: Applicative m => deps -> source -> m source
+convertId:: Applicative m => deps -> source -> m source
 convertId _ x = pure x
 
-convertCoerce :: (Applicative m, Coercible source target) => deps -> source -> m target
+convertCoerce:: (Applicative m, Coercible source target) => deps -> source -> m target
 convertCoerce _ x = pure (coerce x)
 
 -- | A class synonym for @Convertible mark m deps source ServerError@.
-class Convertible mark m deps source ServerError => ToServerError mark m deps source
+class Convertible mark source ServerError => ToServerError mark source
 
-instance Convertible mark m deps source ServerError => ToServerError mark m deps source
+instance Convertible mark source ServerError => ToServerError mark source
 
 -- | __TYPE APPLICATION REQUIRED__! You must specify the @mark@ using a type application.
 asHandlerCall ::
@@ -181,7 +183,7 @@ asHandlerCall ::
     handler.
   ( ToHandler
       mark
-      deps
+      env
       (modelArgs :: [Type])
       (modelErrors :: [Type])
       modelSuccess
