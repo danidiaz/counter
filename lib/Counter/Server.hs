@@ -45,9 +45,6 @@ import Dep.Clock
 import Dep.Has.Call
 
 -- | This is a marker type to identify the servant API.
---
--- In theory, a model could be used to serve different API's, so to avoid
--- instance collisions we parameterize many helper typeclasses by 'X'.
 type X :: (Type -> Type) -> Type
 data X m = X { 
     counter2counter :: Model.Counter -> m API.Counter
