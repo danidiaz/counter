@@ -123,6 +123,10 @@ makeCounterServer ::
   -- |
   CounterServer env m
 makeCounterServer deps = CounterServer
+  -- Should we create the converter here, or should we pass it as a 
+  -- positional parameter?
+  -- If we passed it as a parameter, there would be more constraint spam
+  -- in makeCounterServer, but it would be more flexible.
   let HandlerCall η = asHandlerCall deps (makeX deps)
    in
       \(_ :: User) ->
