@@ -30,15 +30,15 @@
 -- Then, when writing a Servant server, they should obtain a handler adapter by
 -- calling 'asHandlerCall'.
 module Dep.Handler
-  ( ToHandler (toHandler),
+  ( -- ToHandler (toHandler),
     asHandlerCall,
+    HandlerCall (..),
     Convertible (convert),
     convertConst,
     convertId,
     convertPure,
     convertCoerce,
     ToServerError,
-
     -- * "Dep.Server" re-exports
     RIO,
     RHandler,
@@ -172,6 +172,12 @@ asHandlerCall ::
   forall deps mark env.
   deps ->
   mark (RIO env) ->
+  HandlerCall deps mark env
+asHandlerCall (Call φ) mark  = 
+  HandlerCall \g -> toHandler mark (φ g)
+
+newtype HandlerCall deps mark env = HandlerCall {
+  toH :: 
   forall
     r
     (modelArgs :: [Type])
@@ -199,4 +205,4 @@ asHandlerCall ::
   (r (RIO env) -> model) ->
   -- | Converted handler.
   handler
-asHandlerCall (Call φ) mark g = toHandler mark (φ g)
+  }

@@ -126,17 +126,15 @@ makeCounterServer ::
   -- |
   CounterServer env m
 makeCounterServer deps = CounterServer
-  let x =  makeX deps
-      Call φ = deps
+  let HandlerCall η = asHandlerCall deps (makeX deps)
    in
       \(_ :: User) ->
         CounterCollectionAPI
           { counters = \counterId -> do
               CounterAPI
-                { increase = toHandler x (φ Model.increaseCounter) counterId,
-                  query = toHandler x (φ Model.getCounter) counterId,
-                  delete = toHandler x (φ Model.deleteCounter) counterId
+                { increase = η Model.increaseCounter counterId,
+                  query = η Model.getCounter counterId,
+                  delete = η Model.deleteCounter counterId
                 },
-            -- create = toHandler x (φ Model.createCounter)
-            create = toHandler x (φ Model.createCounter)
+            create = η Model.createCounter
           }
