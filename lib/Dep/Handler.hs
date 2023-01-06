@@ -169,8 +169,9 @@ instance Convertible mark source ServerError => ToServerError mark source
 
 -- | __TYPE APPLICATION REQUIRED__! You must specify the @mark@ using a type application.
 asHandlerCall ::
-  forall mark deps env.
+  forall deps mark env.
   deps ->
+  mark (RIO env) ->
   forall
     r
     (modelArgs :: [Type])
@@ -194,7 +195,6 @@ asHandlerCall ::
       handler,
     Has r (RIO env) deps
   ) =>
-  mark (RIO env) ->
   -- | An accessor for a function inside a component.
   (r (RIO env) -> model) ->
   -- | Converted handler.

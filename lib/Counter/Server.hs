@@ -48,44 +48,48 @@ import Dep.Has.Call
 --
 -- In theory, a model could be used to serve different API's, so to avoid
 -- instance collisions we parameterize many helper typeclasses by 'X'.
-data X
+type X :: (Type -> Type) -> Type
+data X m = X { 
+    counter2counter :: Model.Counter -> m API.Counter
+  }
 
 -- | Maps a domain-relevant error to 'ServerError'.
-instance Monad m => Convertible X m deps Model.Missing ServerError where
+instance Convertible X Model.Missing ServerError where
   convert = convertConst err404
 
 -- | Maps a domain-relevant error to 'ServerError'.
-instance Monad m => Convertible X m deps Model.Collision ServerError where
+instance Convertible X Model.Collision ServerError where
   convert = convertConst err500
 
 -- | DTO mapping.
-instance Monad m => Convertible X m deps API.CounterId Model.CounterId where
-  convert = convertCoerce
-
--- | DTO mapping.
-instance Monad m => Convertible X m deps Model.CounterId API.CounterId where
+instance Convertible X API.CounterId Model.CounterId where
   convert = convertCoerce
 
 -- | DTO mapping.
 -- 
 -- This is an example of conversion that performs effects and has dependencies
 -- on other components.
-instance 
-  (Monad m ,
-   Has Clock m deps)
-  => Convertible X m deps Model.Counter API.Counter where
-  convert deps@(Call φ) Model.Counter {Model.counterId, Model.counterValue} = do
-    counterId' <- convert @X deps counterId
-    convertedAt <- φ getNow
-    pure
-      API.Counter
-        { API.counterId = counterId',
-          API.counterValue = counterValue,
-          convertedAt
-        }
+instance Convertible X Model.Counter API.Counter where
+  convert X {counter2counter} = counter2counter
+
+makeX :: (Monad m , Has Clock m deps) => deps -> X m
+makeX (Call φ) = 
+  let converter = X {
+        counter2counter = \Model.Counter {Model.counterId, Model.counterValue} -> do
+          counterId' <- convert converter counterId
+          convertedAt <- φ getNow
+          pure
+            API.Counter
+              { API.counterId = counterId',
+                API.counterValue = counterValue,
+                convertedAt
+              }
+      }
+    in converter
+
 
 -- | DTO mapping.
-instance Monad m => Convertible X m deps () () where
+instance Monad m => Convertible X () () where
   convert = convertId
 
 -- | The type parameters here are a bit weird compared to other components.
@@ -118,14 +122,16 @@ makeCounterServer ::
   deps ->
   -- |
   CounterServer env m
-makeCounterServer (asHandlerCall @X -> η) = CounterServer
-  \(_ :: User) ->
-    CounterCollectionAPI
-      { counters = \counterId -> do
-          CounterAPI
-            { increase = η Model.increaseCounter counterId,
-              query = η Model.getCounter counterId,
-              delete = η Model.deleteCounter counterId
-            },
-        create = η Model.createCounter
-      }
+makeCounterServer deps = CounterServer
+  case asHandlerCall deps (makeX deps) of  
+    η ->
+      \(_ :: User) ->
+        CounterCollectionAPI
+          { counters = \counterId -> do
+              CounterAPI
+                { increase = η Model.increaseCounter counterId,
+                  query = η Model.getCounter counterId,
+                  delete = η Model.deleteCounter counterId
+                },
+            create = η Model.createCounter
+          }
