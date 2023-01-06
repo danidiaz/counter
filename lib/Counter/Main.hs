@@ -12,6 +12,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -20,14 +21,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE QualifiedDo #-}
 
 -- | Hidden inside this module lies the dependency injection context, where all
 -- the different components of the application are brought together.
 module Counter.Main (main) where
 
 import Control.Applicative
-import Control.Arrow (Kleisli (..))
 import Control.Lens (Lens', (%~))
 import Control.Monad.IO.Class
 import Control.Monad.Reader
@@ -39,13 +38,12 @@ import Counter.Server
 import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
-import Dep.Phases
 import Data.Kind (Type)
 import Dep.Clock
 import Dep.Clock.Real qualified
 import Dep.Conf
-import Dep.Env hiding (AccumConstructor, Constructor, constructor, fixEnv, fixEnvAccum)
 import Dep.Constructor
+import Dep.Env hiding (AccumConstructor, Constructor, constructor, fixEnv, fixEnvAccum)
 import Dep.Has (Has (dep))
 import Dep.Has.Call
 import Dep.Knob
@@ -53,6 +51,7 @@ import Dep.Knob.IORef
 import Dep.Knob.Server
 import Dep.Logger
 import Dep.Logger.HandlerAware
+import Dep.Phases
 import Dep.ReaderAdvice
 import Dep.Repository
 import Dep.Repository.Memory
@@ -111,33 +110,33 @@ type M = RIO Env
 deps_ :: Deps_ (Phases M) M
 deps_ =
   Deps
-    { _clock = Dep.Phases.do { noConf ; noAlloc ; arr \_ -> Dep.Clock.Real.make },
+    { _clock = Dep.Phases.do noConf; noAlloc; arr \_ -> Dep.Clock.Real.make,
       _logger = Dep.Phases.do
-          conf <- underField "logger" 
-          knob <- do
-              knobRef <- Dep.Knob.IORef.alloc conf
-              pure @Allocator $ Dep.Knob.IORef.make conf knobRef
-          _accumConstructor \_ ->
-            Dep.Logger.HandlerAware.make (inspectKnob knob)
-              & (,) (mempty, knobNamed "logger" knob),
+        conf <- underField "logger"
+        knob <- do
+          knobRef <- Dep.Knob.IORef.alloc conf
+          pure @Allocator $ Dep.Knob.IORef.make conf knobRef
+        _accumConstructor \_ ->
+          Dep.Logger.HandlerAware.make (inspectKnob knob)
+            & (,) (mempty, knobNamed "logger" knob),
       _counterRepository = Dep.Phases.do
-          conf <- underField "repository" 
-          (knob, mapRef) <- do
-              knobRef <- Dep.Knob.IORef.alloc conf
-              mapRef <- Dep.Repository.Memory.alloc
-              pure @Allocator (Dep.Knob.IORef.make conf knobRef, mapRef)
-          _accumConstructor \deps ->
-            Dep.Repository.Memory.make Model.lastUpdated (inspectKnob knob) mapRef deps & \case
-              -- https://twitter.com/chris__martin/status/1586066539039453185
-              (launcher, repo@Repository {withResource}) ->
-                repo
-                  { withResource =
-                      withResource -- Here we instrument a single method
-                        & advise (logExtraMessage deps "Extra log message added by instrumentation")
-                  }
-                  -- Here we add additional instrumentation for all the methods in the component.
-                  & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
-                  & (,) ([launcher], knobNamed "repository" knob),
+        conf <- underField "repository"
+        (knob, mapRef) <- do
+          knobRef <- Dep.Knob.IORef.alloc conf
+          mapRef <- Dep.Repository.Memory.alloc
+          pure @Allocator (Dep.Knob.IORef.make conf knobRef, mapRef)
+        _accumConstructor \deps ->
+          Dep.Repository.Memory.make Model.lastUpdated (inspectKnob knob) mapRef deps & \case
+            -- https://twitter.com/chris__martin/status/1586066539039453185
+            (launcher, repo@Repository {withResource}) ->
+              repo
+                { withResource =
+                    withResource -- Here we instrument a single method
+                      & advise (logExtraMessage deps "Extra log message added by instrumentation")
+                }
+                -- Here we add additional instrumentation for all the methods in the component.
+                & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
+                & (,) ([launcher], knobNamed "repository" knob),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -148,11 +147,11 @@ deps_ =
       --              call log "Extra log message added by instrumentation"
       --              withResource rid
       --          },
-      _getCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeGetCounter },
-      _increaseCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeIncreaseCounter }, 
-      _deleteCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeDeleteCounter },
-      _createCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeCreateCounter },
-      _server = Dep.Phases.do 
+      _getCounter = Dep.Phases.do noConf; noAlloc; arr makeGetCounter,
+      _increaseCounter = Dep.Phases.do noConf; noAlloc; arr makeIncreaseCounter,
+      _deleteCounter = Dep.Phases.do noConf; noAlloc; arr makeDeleteCounter,
+      _createCounter = Dep.Phases.do noConf; noAlloc; arr makeCreateCounter,
+      _server = Dep.Phases.do
         -- Is this the best place to call 'addHandlerContext'?  It could be done
         -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
         -- would require extra constraints in the function, and it would be
@@ -169,9 +168,9 @@ deps_ =
         noAlloc
         accumConstructor_ \(_, knobs) _ -> makeKnobServer knobs,
       _runner = Dep.Phases.do
-          conf <- underField "runner"
-          noAlloc
-          arr $ makeServantRunner conf 
+        conf <- underField "runner"
+        noAlloc
+        arr $ makeServantRunner conf
     }
   where
     logExtraMessage :: Deps M -> String -> forall r. Advice Top Env IO r
