@@ -169,14 +169,14 @@ instance Convertible mark source ServerError => ToServerError mark source
 
 -- | __TYPE APPLICATION REQUIRED__! You must specify the @mark@ using a type application.
 asHandlerCall ::
-  forall deps mark env.
-  deps ->
+  forall mark env deps.
   mark (RIO env) ->
-  HandlerCall deps mark env
-asHandlerCall (Call φ) mark  = 
+  deps ->
+  HandlerCall mark env deps 
+asHandlerCall mark (Call φ) = 
   HandlerCall \g -> toHandler mark (φ g)
 
-newtype HandlerCall deps mark env = HandlerCall {
+newtype HandlerCall mark env deps = HandlerCall {
   toH :: 
   forall
     r

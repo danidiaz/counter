@@ -24,6 +24,8 @@
 module Counter.Server
   ( CounterServer (..),
     makeCounterServer,
+    X,
+    makeX,
   )
 where
 
@@ -110,25 +112,26 @@ newtype CounterServer env m = CounterServer {counterServer :: ServerT API (RHand
 --
 -- See also "Dep.Server".
 makeCounterServer ::
-  ( 
+  (
     m ~ RIO env,
     Has GetCounter m deps,
     Has IncreaseCounter m deps,
     Has DeleteCounter m deps,
     Has CreateCounter m deps,
-    Has Clock m deps
+--    Has Clock m deps
+    Convertible converter API.CounterId Model.CounterId, 
+    Convertible converter Missing ServerError, 
+    Convertible converter () (), 
+    Convertible converter Model.Counter API.Counter, 
+    Convertible converter Collision ServerError, 
+    Convertible converter Model.CounterId API.CounterId
   ) =>
+  converter m ->
   -- |
   deps ->
   -- |
   CounterServer env m
-makeCounterServer deps = CounterServer
-  -- Should we create the converter here, or should we pass it as a 
-  -- positional parameter?
-  -- If we passed it as a parameter, there would be more constraint spam
-  -- in makeCounterServer, but it would be more flexible.
-  let HandlerCall η = asHandlerCall deps (makeX deps)
-   in
+makeCounterServer converter (asHandlerCall converter -> HandlerCall η) = CounterServer
       \(_ :: User) ->
         CounterCollectionAPI
           { counters = \counterId -> do
