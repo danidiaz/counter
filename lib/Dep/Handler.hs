@@ -30,7 +30,7 @@
 -- Then, when writing a Servant server, they should obtain a handler adapter by
 -- calling 'asHandlerCall'.
 module Dep.Handler
-  ( -- ToHandler,
+  ( ToHandler (toHandler),
     asHandlerCall,
     Convertible (convert),
     convertConst,
@@ -148,15 +148,15 @@ instance
 
 type Convertible:: ((Type -> Type) -> Type) -> Type -> Type -> Constraint
 class Convertible mark source target where
-  convert:: forall m . mark m -> source -> m target
+  convert:: forall m . Monad m => mark m -> source -> m target
 
-convertPure:: Applicative m => (source -> target) -> deps -> source -> m target
+convertPure:: Applicative m => (source -> target) -> r m -> source -> m target
 convertPure f _ source = pure (f source)
 
-convertConst:: Applicative m => target -> deps -> source -> m target
+convertConst:: Applicative m => target -> r m -> source -> m target
 convertConst t _ _ = pure t
 
-convertId:: Applicative m => deps -> source -> m source
+convertId:: Applicative m => r m -> source -> m source
 convertId _ x = pure x
 
 convertCoerce:: (Applicative m, Coercible source target) => deps -> source -> m target

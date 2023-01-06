@@ -65,6 +65,9 @@ instance Convertible X Model.Collision ServerError where
 instance Convertible X API.CounterId Model.CounterId where
   convert = convertCoerce
 
+instance Convertible X Model.CounterId API.CounterId where
+  convert = convertCoerce
+
 -- | DTO mapping.
 -- 
 -- This is an example of conversion that performs effects and has dependencies
@@ -89,7 +92,7 @@ makeX (Call φ) =
 
 
 -- | DTO mapping.
-instance Monad m => Convertible X () () where
+instance Convertible X () () where
   convert = convertId
 
 -- | The type parameters here are a bit weird compared to other components.
@@ -123,15 +126,17 @@ makeCounterServer ::
   -- |
   CounterServer env m
 makeCounterServer deps = CounterServer
-  case asHandlerCall deps (makeX deps) of  
-    η ->
+  let x =  makeX deps
+      Call φ = deps
+   in
       \(_ :: User) ->
         CounterCollectionAPI
           { counters = \counterId -> do
               CounterAPI
-                { increase = η Model.increaseCounter counterId,
-                  query = η Model.getCounter counterId,
-                  delete = η Model.deleteCounter counterId
+                { increase = toHandler x (φ Model.increaseCounter) counterId,
+                  query = toHandler x (φ Model.getCounter) counterId,
+                  delete = toHandler x (φ Model.deleteCounter) counterId
                 },
-            create = η Model.createCounter
+            -- create = toHandler x (φ Model.createCounter)
+            create = toHandler x (φ Model.createCounter)
           }
