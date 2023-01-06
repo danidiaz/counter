@@ -36,26 +36,21 @@ import Counter.Model
 import Counter.Model qualified as Model
 import Counter.Runner
 import Counter.Server
-import Data.Bifunctor (second)
 import Data.Foldable (sequenceA_)
 import Data.Function ((&))
 import Data.Functor
 import Dep.Phases
-import Data.Functor.Identity (runIdentity)
 import Data.Kind (Type)
-import Data.Proxy
-import Data.Typeable
 import Dep.Clock
 import Dep.Clock.Real qualified
 import Dep.Conf
--- import Dep.Env (AccumConstructor, Autowireable, Autowired (..), Compose (Compose), Constructor, FieldsFindableByType, Identity (Identity), Phased (traverseH), fixEnvAccum, fromBare, pullPhase, toBare)
 import Dep.Env hiding (AccumConstructor, Constructor, constructor, fixEnv, fixEnvAccum)
+import Dep.Constructor
 import Dep.Has (Has (dep))
 import Dep.Has.Call
 import Dep.Knob
 import Dep.Knob.IORef
 import Dep.Knob.Server
-import Dep.Constructor
 import Dep.Logger
 import Dep.Logger.HandlerAware
 import Dep.ReaderAdvice
@@ -65,9 +60,7 @@ import Dep.Server
 import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
-import Data.Coerce
 import Prelude hiding (log)
-import Data.Aeson (FromJSON)
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -97,6 +90,10 @@ type Deps m = Deps_ Identity m
 -- Typically file handles, or mutable references.
 type Allocator = ContT () IO
 
+-- | Perform no allocations.
+noAlloc :: Allocator ()
+noAlloc = pure ()
+
 type Accumulator m = ([ContT () m ()], KnobMap m)
 
 -- | We have a configuration phase followed by an allocation phase followed by a
@@ -114,7 +111,7 @@ type M = RIO Env
 deps_ :: Deps_ (Phases M) M
 deps_ =
   Deps
-    { _clock = purePhases $ _accumConstructor_ \_ -> Dep.Clock.Real.make,
+    { _clock = Dep.Phases.do { noConf ; noAlloc ; arr \_ -> Dep.Clock.Real.make },
       _logger = Dep.Phases.do
           conf <- underField "logger" 
           knob <- do
@@ -151,40 +148,36 @@ deps_ =
       --              call log "Extra log message added by instrumentation"
       --              withResource rid
       --          },
-      _getCounter = purePhases $ _accumConstructor_ makeGetCounter,
-      _increaseCounter = purePhases $ _accumConstructor_ makeIncreaseCounter, 
-      _deleteCounter = purePhases $ _accumConstructor_ makeDeleteCounter,
-      _createCounter = purePhases $ _accumConstructor_ makeCreateCounter,
-      _server =
+      _getCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeGetCounter },
+      _increaseCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeIncreaseCounter }, 
+      _deleteCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeDeleteCounter },
+      _createCounter = Dep.Phases.do { noConf ; noAlloc ; arr makeCreateCounter },
+      _server = Dep.Phases.do 
         -- Is this the best place to call 'addHandlerContext'?  It could be done
         -- im 'makeServantServer' as well.  But doing it in 'makeServantServer'
         -- would require extra constraints in the function, and it would be
         -- farther from the component which uses the HandlerContext, which is
         -- the Logger.
-        purePhases $
-          _accumConstructor_ \deps ->
-            makeCounterServer deps & \case
-              server@(CounterServer {counterServer}) ->
-                server {counterServer = addHandlerContext [] counterServer},
-      _knobServer = purePhases $ accumConstructor_ \(_, knobs) _ -> makeKnobServer knobs,
+        noConf
+        noAlloc
+        arr \deps ->
+          makeCounterServer deps & \case
+            server@(CounterServer {counterServer}) ->
+              server {counterServer = addHandlerContext [] counterServer},
+      _knobServer = Dep.Phases.do
+        noConf
+        noAlloc
+        accumConstructor_ \(_, knobs) _ -> makeKnobServer knobs,
       _runner = Dep.Phases.do
           conf <- underField "runner"
           noAlloc
-          _accumConstructor_ $ makeServantRunner conf 
+          arr $ makeServantRunner conf 
     }
   where
-    noAlloc :: ContT () IO ()
-    noAlloc = pure ()
-    purePhases :: forall r m. AccumConstructor (Accumulator m) (Deps m) (r m) -> Phases m (r m)
-    purePhases f = fromBare $ noConf <&> \_ -> noAlloc <&> \() -> f
     logExtraMessage :: Deps M -> String -> forall r. Advice Top Env IO r
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
       action
---    confWithoutAlloc :: FromJSON a => String -> (Configurator `Compose` Allocator) a
---    confWithoutAlloc name = Dep.Phases.do
---      conf <- underField name
---      pure conf
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
@@ -234,11 +227,3 @@ main = do
           (sequenceA_ launchers)
           (\() -> liftIO do runServer initialEnv)
           initialEnv
-
--- recompose :: forall phases phases' bare. (
---   Coercible phases bare, 
---   Coercible phases' bare,
---   Bare phases ~ bare,
---   Bare phases' ~ bare
---   ) => phases -> phases'
--- recompose = fromBare @phases' . toBare @phases
