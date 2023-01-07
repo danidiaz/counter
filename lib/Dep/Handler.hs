@@ -208,8 +208,6 @@ newtype HandlerCall conv env deps
             handler,
           Has r (RIO env) deps
         ) =>
-        -- \| An accessor for a function inside a component.
         (r (RIO env) -> method) ->
-        -- \| Converted handler.
         handler
       )
