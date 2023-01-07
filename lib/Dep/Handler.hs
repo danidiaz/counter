@@ -76,71 +76,71 @@ class
   ToHandler
     mark
     env
-    (modelArgs :: [Type])
-    (modelErrors :: [Type])
-    modelSuccess
-    modelResult
-    model
+    (methodArgs :: [Type])
+    (methodErrors :: [Type])
+    methodSuccess
+    methodResult
+    method
     (handlerArgs :: [Type])
     handlerResult
     handler
-    | model -> modelArgs modelResult,
-      modelResult -> modelErrors modelSuccess,
+    | method -> methodArgs methodResult,
+      methodResult -> methodErrors methodSuccess,
       handler -> handlerArgs handlerResult
   where
-  toHandler :: mark (RIO env) -> model -> handler
+  toHandler :: mark (RIO env) -> method -> handler
 
 instance
-  ( Multicurryable Either modelErrors modelSuccess modelResult,
-    Multicurryable (->) modelArgs (RIO env modelResult) model,
+  ( Multicurryable Either methodErrors methodSuccess methodResult,
+    Multicurryable (->) methodArgs (RIO env methodResult) method,
     Multicurryable (->) handlerArgs (RHandler env handlerResult) handler,
     --
-    AllZip (Convertible mark) handlerArgs modelArgs,
-    All (ToServerError mark) modelErrors,
-    Convertible mark modelSuccess handlerResult
+    AllZip (Convertible mark) handlerArgs methodArgs,
+    All (ToServerError mark) methodErrors,
+    Convertible mark methodSuccess handlerResult
   ) =>
   ToHandler
     mark
     env
-    (modelArgs :: [Type])
-    (modelErrors :: [Type])
-    modelSuccess
-    modelResult
-    model
+    (methodArgs :: [Type])
+    (methodErrors :: [Type])
+    methodSuccess
+    methodResult
+    method
     (handlerArgs :: [Type])
     handlerResult
     handler
   where
-  toHandler mark model =
+  toHandler mark method =
     multicurry @(->) @handlerArgs $ \handlerArgs ->
-      let modelArgs :: RIO env (NP I modelArgs)
-          modelArgs =
+      let methodArgs :: RIO env (NP I methodArgs)
+          methodArgs =
             sequence_NP $
               trans_NP
                 (Proxy @(Convertible mark))
                 (\(I x) -> convert mark x)
                 handlerArgs
-          uncurriedModel = multiuncurry @(->) @modelArgs model
-          modelTip :: RIO env (Either (NS I modelErrors) modelSuccess)
-          modelTip = do
-            args <- modelArgs
-            multiuncurry @Either @modelErrors @modelSuccess <$> uncurriedModel args
-          transformErrors :: NS I modelErrors -> RIO env ServerError
+          uncurriedMethod = multiuncurry @(->) @methodArgs method
+          methodTip :: RIO env (Either (NS I methodErrors) methodSuccess)
+          methodTip = do
+            args <- methodArgs
+            multiuncurry @Either @methodErrors @methodSuccess <$> uncurriedMethod args
+          transformErrors :: NS I methodErrors -> RIO env ServerError
           transformErrors errors = do
-            mappedErrors :: NS (K ServerError) modelErrors <-
+            mappedErrors :: NS (K ServerError) methodErrors <-
               sequence'_NS $
                 cmap_NS
                   (Proxy @(ToServerError mark))
                   (\(I e) -> Comp $ K <$> convert mark e)
                   errors
             pure $ collapse_NS mappedErrors
-          transformSuccess :: modelSuccess -> RIO env handlerResult
+          transformSuccess :: methodSuccess -> RIO env handlerResult
           transformSuccess = convert mark
           transformMonad :: forall x. RIO env (Either ServerError x) -> RHandler env x
           transformMonad = coerce
           handlerTip :: RHandler env handlerResult
           handlerTip = transformMonad do
-            tip <- modelTip
+            tip <- methodTip
             case tip of
               Left errors -> Left <$> transformErrors errors
               Right s -> Right <$> transformSuccess s
@@ -168,7 +168,7 @@ class Convertible mark source ServerError => ToServerError mark source
 instance Convertible mark source ServerError => ToServerError mark source
 
 -- | Given a converter and a dependency injection environment, produce a
--- function that is able to convert the' \"methods\" of components from the
+-- function that is able to convert \"methods\" of components from the
 -- model into Servant handlers, provided the necessary 'Convert' instances exist
 -- for the arguments, result values, and potential errors.
 --
@@ -187,29 +187,29 @@ newtype HandlerCall conv env deps
   = HandlerCall
       ( forall
           r
-          (modelArgs :: [Type])
-          (modelErrors :: [Type])
-          modelSuccess
-          modelResult
-          model
+          (methodArgs :: [Type])
+          (methodErrors :: [Type])
+          methodSuccess
+          methodResult
+          method
           (handlerArgs :: [Type])
           handlerResult
           handler.
         ( ToHandler
             conv
             env
-            (modelArgs :: [Type])
-            (modelErrors :: [Type])
-            modelSuccess
-            modelResult
-            model
+            (methodArgs :: [Type])
+            (methodErrors :: [Type])
+            methodSuccess
+            methodResult
+            method
             (handlerArgs :: [Type])
             handlerResult
             handler,
           Has r (RIO env) deps
         ) =>
         -- \| An accessor for a function inside a component.
-        (r (RIO env) -> model) ->
+        (r (RIO env) -> method) ->
         -- \| Converted handler.
         handler
       )
