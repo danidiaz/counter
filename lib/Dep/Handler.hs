@@ -176,14 +176,14 @@ instance Convertible mark source ServerError => ToServerError mark source
 -- with the extra responsability of transforming the methods it \"looks up\" 
 -- into Servant handlers.
 asHandlerCall ::
-  forall conv env deps.
+  forall conv deps env.
   conv (RIO env) ->
   deps ->
-  HandlerCall conv env deps
+  HandlerCall conv deps env 
 asHandlerCall conv (Call φ) =
   HandlerCall \g -> toHandler conv (φ g)
 
-newtype HandlerCall conv env deps
+newtype HandlerCall conv deps env
   = HandlerCall
       ( forall
           r
