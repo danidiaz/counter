@@ -10,12 +10,12 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
 
 -- | A bunch of helpers for turning functions from the model (which should be
 -- innocent from any web framework) into Servant handlers.
@@ -39,6 +39,7 @@ module Dep.Handler
     convertPure,
     convertCoerce,
     ToServerError,
+
     -- * "Dep.Server" re-exports
     RIO,
     RHandler,
@@ -52,6 +53,7 @@ import Data.Kind
 import Data.SOP
 import Data.SOP.NP (sequence_NP, trans_NP)
 import Data.SOP.NS (cmap_NS, collapse_NS, sequence'_NS)
+import Data.Typeable (Typeable)
 import Dep.Has
 import Dep.Has.Call
 import Dep.Server
@@ -60,7 +62,6 @@ import Servant.Server
   ( Handler (..),
     ServerError,
   )
-import Data.Typeable (Typeable)
 
 -- | Converts some monadic function from the model into something usable as a
 -- Servant handler.
@@ -90,8 +91,7 @@ class
   toHandler :: mark (RIO env) -> model -> handler
 
 instance
-  ( 
-    Multicurryable Either modelErrors modelSuccess modelResult,
+  ( Multicurryable Either modelErrors modelSuccess modelResult,
     Multicurryable (->) modelArgs (RIO env modelResult) model,
     Multicurryable (->) handlerArgs (RHandler env handlerResult) handler,
     --
@@ -146,21 +146,20 @@ instance
               Right s -> Right <$> transformSuccess s
        in handlerTip
 
-
-type Convertible:: ((Type -> Type) -> Type) -> Type -> Type -> Constraint
+type Convertible :: ((Type -> Type) -> Type) -> Type -> Type -> Constraint
 class (Typeable source, Typeable target) => Convertible mark source target where
-  convert:: forall m . Monad m => mark m -> source -> m target
+  convert :: forall m. Monad m => mark m -> source -> m target
 
-convertPure:: Applicative m => (source -> target) -> r m -> source -> m target
+convertPure :: Applicative m => (source -> target) -> r m -> source -> m target
 convertPure f _ source = pure (f source)
 
-convertConst:: Applicative m => target -> r m -> source -> m target
+convertConst :: Applicative m => target -> r m -> source -> m target
 convertConst t _ _ = pure t
 
-convertId:: Applicative m => r m -> source -> m source
+convertId :: Applicative m => r m -> source -> m source
 convertId _ x = pure x
 
-convertCoerce:: (Applicative m, Coercible source target) => deps -> source -> m target
+convertCoerce :: (Applicative m, Coercible source target) => deps -> source -> m target
 convertCoerce _ x = pure (coerce x)
 
 -- | A class synonym for @Convertible mark m deps source ServerError@.
@@ -168,42 +167,49 @@ class Convertible mark source ServerError => ToServerError mark source
 
 instance Convertible mark source ServerError => ToServerError mark source
 
--- | __TYPE APPLICATION REQUIRED__! You must specify the @mark@ using a type application.
+-- | Given a converter and a dependency injection environment, produce a
+-- function that is able to convert the' \"methods\" of components from the
+-- model into Servant handlers, provided the necessary 'Convert' instances exist
+-- for the arguments, result values, and potential errors.
+--
+-- 'asHandlerCall' is in the spirit of the 'Dep.Has.asCall' invocation helper, 
+-- with the extra responsability of transforming the methods it \"looks up\" 
+-- into Servant handlers.
 asHandlerCall ::
-  forall mark env deps.
-  mark (RIO env) ->
+  forall conv env deps.
+  conv (RIO env) ->
   deps ->
-  HandlerCall mark env deps 
-asHandlerCall mark (Call φ) = 
-  HandlerCall \g -> toHandler mark (φ g)
+  HandlerCall conv env deps
+asHandlerCall conv (Call φ) =
+  HandlerCall \g -> toHandler conv (φ g)
 
-newtype HandlerCall mark env deps = HandlerCall {
-  toH :: 
-  forall
-    r
-    (modelArgs :: [Type])
-    (modelErrors :: [Type])
-    modelSuccess
-    modelResult
-    model
-    (handlerArgs :: [Type])
-    handlerResult
-    handler.
-  ( ToHandler
-      mark
-      env
-      (modelArgs :: [Type])
-      (modelErrors :: [Type])
-      modelSuccess
-      modelResult
-      model
-      (handlerArgs :: [Type])
-      handlerResult
-      handler,
-    Has r (RIO env) deps
-  ) =>
-  -- | An accessor for a function inside a component.
-  (r (RIO env) -> model) ->
-  -- | Converted handler.
-  handler
-  }
+newtype HandlerCall conv env deps
+  = HandlerCall
+      ( forall
+          r
+          (modelArgs :: [Type])
+          (modelErrors :: [Type])
+          modelSuccess
+          modelResult
+          model
+          (handlerArgs :: [Type])
+          handlerResult
+          handler.
+        ( ToHandler
+            conv
+            env
+            (modelArgs :: [Type])
+            (modelErrors :: [Type])
+            modelSuccess
+            modelResult
+            model
+            (handlerArgs :: [Type])
+            handlerResult
+            handler,
+          Has r (RIO env) deps
+        ) =>
+        -- \| An accessor for a function inside a component.
+        (r (RIO env) -> model) ->
+        -- \| Converted handler.
+        handler
+      )

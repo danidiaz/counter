@@ -62,24 +62,24 @@ makeCounterServer ::
     Has DeleteCounter m deps,
     Has CreateCounter m deps,
     -- These constraints can easily be added from suggestions from the IDE
-    Convertible c API.CounterId Model.CounterId, 
-    Convertible c Missing ServerError, 
-    Convertible c Collision ServerError, 
-    Convertible c () (), 
-    Convertible c Model.Counter API.Counter,
-    Convertible c Model.CounterId API.CounterId
+    Convertible conv API.CounterId Model.CounterId, 
+    Convertible conv Missing ServerError, 
+    Convertible conv Collision ServerError, 
+    Convertible conv () (), 
+    Convertible conv Model.Counter API.Counter,
+    Convertible conv Model.CounterId API.CounterId
   ) =>
   -- | We are polymorphic on the model <-> API converter. 
   -- It's passed positionally; it's not found by type, using 'Has'. 
   -- We *don't* need to know its concrete type, because we only use it through its instances.
   -- Despite that, the concrete converter is defined in this same module, for simplicity.
   -- But we could change it, if needed.
-  c m ->
+  conv m ->
   -- |
   deps ->
   -- |
   CounterServer env m
-makeCounterServer c (asHandlerCall c -> HandlerCall η) = CounterServer
+makeCounterServer conv (asHandlerCall conv -> HandlerCall η) = CounterServer
       \(_ :: User) ->
         CounterCollectionAPI
           { counters = \counterId -> do
