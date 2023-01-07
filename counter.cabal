@@ -37,6 +37,7 @@ library lib-counter
                       Dep.Repository
                       Dep.Repository.Memory
                       Dep.Has.Call
+                      Dep.Injects
                       Dep.Phases
                       Dep.Conf
                       Dep.Handler
@@ -68,6 +69,7 @@ library lib-counter
         unliftio-core                      >= 0.2.0 && < 0.3,
         by-other-names                     >= 1.2.2.0,
         multicurryable                     >= 0.1.0.0,
-        sop-core                           >= 0.5.0.0
+        sop-core                           >= 0.5.0.0,
+        generically                        >= 0.1,
     ghc-options:
         -Wredundant-constraints

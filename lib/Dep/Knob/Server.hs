@@ -19,6 +19,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | A Servant server for exposing the controls of a 'Knob' as REST endpoints.
 module Dep.Knob.Server
@@ -57,13 +58,14 @@ import Servant.Server
 data SomeKnob m where
   SomeKnob :: forall conf m. (FromJSON conf, ToJSON conf) => Knob conf m -> SomeKnob m
 
-type KnobMap m = Map KnobName (SomeKnob m)
+newtype KnobMap m = KnobMap (Map KnobName (SomeKnob m))
+  deriving newtype (Semigroup, Monoid)
 
 type KnobServer :: Type -> (Type -> Type) -> Type
 newtype KnobServer env m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCollectionAPI) (RHandler env)}
 
 knobNamed :: forall conf m. (FromJSON conf, ToJSON conf) => KnobName -> Knob conf m -> KnobMap m
-knobNamed name knob = Map.singleton name (SomeKnob knob)
+knobNamed name knob = KnobMap $ Map.singleton name (SomeKnob knob)
 
 -- See also "Dep.Server".
 makeKnobServer ::
@@ -72,7 +74,7 @@ makeKnobServer ::
   ) =>
   KnobMap m ->
   KnobServer env m
-makeKnobServer knobs =
+makeKnobServer (KnobMap knobs) =
   KnobServer $
     KnobCollectionAPI
       { allKnobs = do

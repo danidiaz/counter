@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -59,7 +60,9 @@ import Dep.Server
 import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
+import Dep.Injects
 import Prelude hiding (log)
+import GHC.Generics.Generically
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -93,7 +96,27 @@ type Allocator = ContT () IO
 noAlloc :: Allocator ()
 noAlloc = pure ()
 
-type Accumulator m = ([ContT () m ()], KnobMap m)
+data Accumulator m = Accumulator {
+    _activities :: Activities m, 
+    _knobMap :: KnobMap m
+  } 
+  deriving stock Generic
+  deriving (Semigroup, Monoid) via Generically (Accumulator m)
+
+newtype Activities m = Activities [ContT () m ()]
+  deriving newtype (Semigroup, Monoid)
+
+instance Has KnobMap m (Accumulator m) where   
+  dep Accumulator {_knobMap} = _knobMap
+
+instance Injects KnobMap m (Accumulator m) where   
+  inject x = mempty { _knobMap = x }
+
+instance Has Activities m (Accumulator m) where   
+  dep Accumulator {_activities} = _activities
+
+instance Injects Activities m (Accumulator m) where   
+  inject x = mempty { _activities = x }
 
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
@@ -118,7 +141,7 @@ deps_ =
           pure @Allocator $ Dep.Knob.IORef.make conf knobRef
         _accumConstructor \_ ->
           Dep.Logger.HandlerAware.make (inspectKnob knob)
-            & (,) (mempty, knobNamed "logger" knob),
+            & register (inject $ knobNamed "logger" knob),
       _counterRepository = Dep.Phases.do
         conf <- underField "repository"
         (knob, mapRef) <- do
@@ -136,7 +159,8 @@ deps_ =
                 }
                 -- Here we add additional instrumentation for all the methods in the component.
                 & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
-                & (,) ([launcher], knobNamed "repository" knob),
+                & register (inject (Activities [launcher]) 
+                      <> inject (knobNamed "repository" knob)),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of
@@ -166,7 +190,7 @@ deps_ =
       _knobServer = Dep.Phases.do
         noConf
         noAlloc
-        accumConstructor_ \(_, knobs) _ -> makeKnobServer knobs,
+        accumConstructor_ \accum _ -> makeKnobServer (dep @KnobMap accum),
       _runner = Dep.Phases.do
         conf <- underField "runner"
         noAlloc
@@ -177,6 +201,7 @@ deps_ =
     logExtraMessage (Call φ) message = makeExecutionAdvice \action -> do
       φ log Debug message
       action
+    register = (,)
 
 -- | Boilerplate that enables components to find their own dependencies in the
 -- DI context.
@@ -212,7 +237,7 @@ main = do
               liftAH
                 (lmapAccumConstructor (\tyRep -> loggerLens %~ alwaysLogFor tyRep))
                 constructors
-        let ((launchers, _), deps :: Deps M) = fixEnvAccum namedLoggers
+        let (accum :: Accumulator M, deps :: Deps M) = fixEnvAccum namedLoggers
         -- RUNNNING THE APP
         let ServantRunner {runServer} = dep deps
         let initialEnv =
@@ -221,8 +246,9 @@ main = do
                   -- "addHandlerContext".
                   _handlerContext = []
                 }
+        let Activities activities = dep accum
         let runReaderContT c f = runReaderT (runContT c f)
         runReaderContT
-          (sequenceA_ launchers)
+          (sequenceA_ activities)
           (\() -> liftIO do runServer initialEnv)
           initialEnv
