@@ -160,7 +160,7 @@ deps_ =
         noConf
         noAlloc
         arr \deps ->
-          makeCounterServer (makeX deps) deps & \case
+          makeCounterServer (Counter.Server.makeC deps) deps & \case
             server@(CounterServer {counterServer}) ->
               server {counterServer = addHandlerContext [] counterServer},
       _knobServer = Dep.Phases.do

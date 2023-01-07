@@ -60,6 +60,7 @@ import Servant.Server
   ( Handler (..),
     ServerError,
   )
+import Data.Typeable (Typeable)
 
 -- | Converts some monadic function from the model into something usable as a
 -- Servant handler.
@@ -147,7 +148,7 @@ instance
 
 
 type Convertible:: ((Type -> Type) -> Type) -> Type -> Type -> Constraint
-class Convertible mark source target where
+class (Typeable source, Typeable target) => Convertible mark source target where
   convert:: forall m . Monad m => mark m -> source -> m target
 
 convertPure:: Applicative m => (source -> target) -> r m -> source -> m target
