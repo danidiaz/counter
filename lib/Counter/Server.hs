@@ -36,7 +36,7 @@ import Counter.Model qualified as Model
 import Data.Kind
 import Dep.Has
 import Dep.Handler
-import Servant (ServerError)
+import Servant (ServerError, NoContent (NoContent))
 import Servant.Server
   ( 
     HasServer (ServerT),
@@ -64,7 +64,7 @@ makeCounterServer ::
     Convertible conv API.CounterId Model.CounterId, 
     Convertible conv Missing ServerError, 
     Convertible conv Collision ServerError, 
-    Convertible conv () (), 
+    Convertible conv () NoContent, 
     Convertible conv Model.Counter API.Counter,
     Convertible conv Model.CounterId API.CounterId
   ) =>
@@ -145,8 +145,8 @@ instance Convertible C Model.CounterId API.CounterId where
   convert = convertCoerce
 
 -- | DTO mapping.
-instance Convertible C () () where
-  convert = convertId
+instance Convertible C () NoContent where
+  convert = convertConst NoContent
 
 -- | The type parameters here are a bit weird compared to other components.
 --

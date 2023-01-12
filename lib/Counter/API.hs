@@ -26,9 +26,10 @@ import Servant.API
       GenericMode(type (:-)),
       NamedRoutes,
       type (:>),
-      Delete,
       Get,
-      Post )
+      Post,
+      PostNoContent, 
+      DeleteNoContent )
 import Servant.API.Generic (Generic)
 import Data.Time (UTCTime)
 
@@ -41,9 +42,9 @@ data CounterCollectionAPI mode = CounterCollectionAPI
   deriving stock (Generic)
 
 data CounterAPI mode = CounterAPI
-  { increase :: mode :- "increase" :> Post '[JSON] (),
+  { increase :: mode :- "increase" :> PostNoContent,
     query :: mode :- Get '[JSON] Counter,
-    delete :: mode :- Delete '[JSON] ()
+    delete :: mode :- DeleteNoContent
   }
   deriving stock (Generic)
 
