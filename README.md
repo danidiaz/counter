@@ -135,10 +135,8 @@ Links
 - [servant on Hackage](https://hackage.haskell.org/package/servant)
 - [servant-server on Hackage](https://hackage.haskell.org/package/servant-server)
 - [Named routes in Servant](https://www.tweag.io/blog/2022-02-24-named-routes/)
-
+- [servant-template](https://github.com/tweag/servant-template) "a well-documented project to showcase Servant named routes and, in general, a modern web application setup"
 - [How to Haskell: Sharing Data Types is Tight Coupling](https://leapyear.io/resources/blog-posts/how-to-haskell-sharing-data-types-is-tight-coupling/). [tweet](https://twitter.com/DiazCarrete/status/1570487241755197440).
-
 - [Mapped Diagnostic Context in Java's Logback logging framework](https://logback.qos.ch/manual/mdc.html)
-
 - [Handle pattern with servant to build flexible web-apps in Haskell](https://www.reddit.com/r/haskell/comments/z13xvj/tutorial_handle_pattern_with_servant_to_build/) Another "toy" project for demostrating app architecture ideas.
 
