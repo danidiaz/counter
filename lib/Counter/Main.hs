@@ -96,27 +96,11 @@ type Allocator = ContT () IO
 noAlloc :: Allocator ()
 noAlloc = pure ()
 
-data Accumulator m = Accumulator {
-    _activities :: Activities m, 
-    _knobMap :: KnobMap m
-  } 
-  deriving stock Generic
-  deriving (Semigroup, Monoid) via Generically (Accumulator m)
+-- | We rely on the 'Has' and 'Injects' instances for tuples.
+type Accumulator m = (Activities m, KnobMap m)
 
 newtype Activities m = Activities [ContT () m ()]
   deriving newtype (Semigroup, Monoid)
-
-instance Has KnobMap m (Accumulator m) where   
-  dep Accumulator {_knobMap} = _knobMap
-
-instance Injects KnobMap m (Accumulator m) where   
-  inject x = mempty { _knobMap = x }
-
-instance Has Activities m (Accumulator m) where   
-  dep Accumulator {_activities} = _activities
-
-instance Injects Activities m (Accumulator m) where   
-  inject x = mempty { _activities = x }
 
 -- | We have a configuration phase followed by an allocation phase followed by a
 -- "wiring" phase in which we tie the knot to obtain the fully constructed DI
