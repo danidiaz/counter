@@ -1,19 +1,19 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -46,7 +46,8 @@ import Dep.Clock.Real qualified
 import Dep.Conf
 import Dep.Constructor
 import Dep.Env hiding (AccumConstructor, Constructor, constructor, fixEnv, fixEnvAccum)
-import Dep.Has ( Has(dep), pattern Call )
+import Dep.Has (Has (dep), pattern Call)
+import Dep.Injects
 import Dep.Knob
 import Dep.Knob.IORef
 import Dep.Knob.Server
@@ -55,14 +56,12 @@ import Dep.Logger.HandlerAware
 import Dep.Phases
 import Dep.ReaderAdvice
 import Dep.Repository
-import Dep.Repository.Memory
+import Dep.Repository.Memory ( alloc, make )
 import Dep.Server
 import GHC.Generics (Generic)
 import GHC.Records
 import Servant.Server.HandlerContext
-import Dep.Injects
 import Prelude hiding (log)
-import GHC.Generics.Generically
 
 -- | The dependency injection context, where all the componets are brought
 -- together and wired.
@@ -96,7 +95,14 @@ type Allocator = ContT () IO
 noAlloc :: Allocator ()
 noAlloc = pure ()
 
--- | We rely on the 'Has' and 'Injects' instances for tuples.
+-- | Components can \"register\" two things:
+--
+-- - An asynchronous activity tied to the component that runs while the app is active.
+--
+-- - A \"Knob\", which is a general way of inspecting and dynamically setting the
+--   component's state.
+--
+-- We rely on the 'Has' and 'Injects' instances for tuples.
 type Accumulator m = (Activities m, KnobMap m)
 
 newtype Activities m = Activities [ContT () m ()]
@@ -143,8 +149,10 @@ deps_ =
                 }
                 -- Here we add additional instrumentation for all the methods in the component.
                 & adviseRecord @Top @Top (\_ -> logExtraMessage deps "Applies to all methods.")
-                & register (inject (Activities [launcher]) 
-                      <> inject (knobNamed "repository" knob)),
+                & register
+                  ( inject (Activities [launcher])
+                      <> inject (knobNamed "repository" knob)
+                  ),
       -- A less magical (compared to the Advice method above) way of adding the
       -- extra log message. Perhaps it should be preferred, but the problem is
       -- that it forces you to explicitly pass down the positional arguments of

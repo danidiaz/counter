@@ -67,6 +67,5 @@ library lib-counter
         by-other-names                     >= 1.2.2.0,
         multicurryable                     >= 0.1.0.0,
         sop-core                           >= 0.5.0.0,
-        generically                        >= 0.1,
     ghc-options:
         -Wredundant-constraints
