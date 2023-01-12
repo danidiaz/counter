@@ -31,6 +31,7 @@ import Dep.Logger
 import GHC.Generics (Generic)
 import Servant.Server.HandlerContext
 import Prelude hiding (log)
+import System.IO
 
 newtype Conf = Conf
   { minimumLevel :: ConfLogLevel
@@ -83,7 +84,7 @@ make askConf = do
           context <- view handlerContext
           let mtyCon = typeRepTyCon <$> mrep
           liftIO $
-            putStrLn $
+            hPutStrLn stderr $
               "endpoint="
                 ++ show (reverse context)
                 ++ " component="
