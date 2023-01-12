@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -45,8 +46,7 @@ import Dep.Clock.Real qualified
 import Dep.Conf
 import Dep.Constructor
 import Dep.Env hiding (AccumConstructor, Constructor, constructor, fixEnv, fixEnvAccum)
-import Dep.Has (Has (dep))
-import Dep.Has.Call
+import Dep.Has ( Has(dep), pattern Call )
 import Dep.Knob
 import Dep.Knob.IORef
 import Dep.Knob.Server

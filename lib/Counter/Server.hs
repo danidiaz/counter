@@ -44,7 +44,6 @@ import Servant.Server
     err500,
   )
 import Dep.Clock
-import Dep.Has.Call
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.

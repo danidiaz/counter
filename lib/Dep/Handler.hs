@@ -55,7 +55,6 @@ import Data.SOP.NP (sequence_NP, trans_NP)
 import Data.SOP.NS (cmap_NS, collapse_NS, sequence'_NS)
 import Data.Typeable (Typeable)
 import Dep.Has
-import Dep.Has.Call
 import Dep.Server
 import Multicurryable
 import Servant.Server

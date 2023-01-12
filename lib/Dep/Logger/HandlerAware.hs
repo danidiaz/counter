@@ -25,7 +25,6 @@ import Data.Aeson.Types (Key, object)
 import Data.IORef
 import Data.Typeable (typeRepTyCon)
 import Dep.Has
-import Dep.Has.Call
 import Dep.Knob
 import Dep.Knob.IORef qualified
 import Dep.Logger

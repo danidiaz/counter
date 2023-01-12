@@ -48,7 +48,6 @@ import Data.UUID
 import Data.UUID.V4
 import Dep.Clock
 import Dep.Has
-import Dep.Has.Call
 import Dep.Logger
 import Dep.Repository
 import GHC.Generics (Generic)

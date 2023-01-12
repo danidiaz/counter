@@ -37,7 +37,6 @@ import Data.Time (UTCTime, diffUTCTime)
 import Data.Tuple (swap)
 import Dep.Clock
 import Dep.Has
-import Dep.Has.Call
 import Dep.Logger (LogLevel (..), Logger (log))
 import Dep.Repository
   ( Missing (Missing),
