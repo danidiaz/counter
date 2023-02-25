@@ -29,6 +29,7 @@ import Data.Aeson
 import Control.Arrow (Kleisli (..))
 import Data.Aeson.Types qualified as A
 import Data.Yaml
+import Data.Yaml qualified as Y
 import Data.String (fromString)
 import Control.Monad.IO.Class
 import Data.Bifunctor (first)
@@ -53,4 +54,4 @@ parseYamlFile (Kleisli objectParser) filepath = do
     Right confValue -> 
         let parser = A.withObject "configuration" objectParser
             result = parseEither parser confValue
-         in first AesonException result
+         in first Y.AesonException result
