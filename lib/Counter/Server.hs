@@ -71,7 +71,8 @@ type family H (m :: Type -> Type) :: Type -> Type where
 -- See also "Dep.Server".
 makeCounterServer ::
   (
-    m ~ RIO env,
+    Monad n,
+    m ~ ReaderT env n,
     Has GetCounter m deps,
     Has IncreaseCounter m deps,
     Has DeleteCounter m deps,

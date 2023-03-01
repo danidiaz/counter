@@ -75,6 +75,7 @@ class
   ToHandler
     mark
     env
+    n
     (methodArgs :: [Type])
     (methodErrors :: [Type])
     methodSuccess
@@ -87,12 +88,13 @@ class
       methodResult -> methodErrors methodSuccess,
       handler -> handlerArgs handlerResult
   where
-  toHandler :: mark (RIO env) -> method -> handler
+  toHandler :: mark (ReaderT env n) -> method -> handler
 
 instance
-  ( Multicurryable Either methodErrors methodSuccess methodResult,
-    Multicurryable (->) methodArgs (ReaderT env IO methodResult) method,
-    Multicurryable (->) handlerArgs (ReaderT env (ExceptT ServerError IO) handlerResult) handler,
+  ( Monad n,
+    Multicurryable Either methodErrors methodSuccess methodResult,
+    Multicurryable (->) methodArgs (ReaderT env n methodResult) method,
+    Multicurryable (->) handlerArgs (ReaderT env (ExceptT ServerError n) handlerResult) handler,
     --
     AllZip (Convertible mark) handlerArgs methodArgs,
     All (ToServerError mark) methodErrors,
@@ -101,6 +103,7 @@ instance
   ToHandler
     mark
     env
+    n
     (methodArgs :: [Type])
     (methodErrors :: [Type])
     methodSuccess
@@ -112,7 +115,7 @@ instance
   where
   toHandler mark method =
     multicurry @(->) @handlerArgs $ \handlerArgs ->
-      let methodArgs :: RIO env (NP I methodArgs)
+      let methodArgs :: ReaderT env n (NP I methodArgs)
           methodArgs =
             sequence_NP $
               trans_NP
@@ -120,11 +123,11 @@ instance
                 (\(I x) -> convert mark x)
                 handlerArgs
           uncurriedMethod = multiuncurry @(->) @methodArgs method
-          methodTip :: RIO env (Either (NS I methodErrors) methodSuccess)
+          methodTip :: ReaderT env n (Either (NS I methodErrors) methodSuccess)
           methodTip = do
             args <- methodArgs
             multiuncurry @Either @methodErrors @methodSuccess <$> uncurriedMethod args
-          transformErrors :: NS I methodErrors -> RIO env ServerError
+          transformErrors :: NS I methodErrors -> ReaderT env n ServerError
           transformErrors errors = do
             mappedErrors :: NS (K ServerError) methodErrors <-
               sequence'_NS $
@@ -133,11 +136,11 @@ instance
                   (\(I e) -> Comp $ K <$> convert mark e)
                   errors
             pure $ collapse_NS mappedErrors
-          transformSuccess :: methodSuccess -> RIO env handlerResult
+          transformSuccess :: methodSuccess -> ReaderT env n handlerResult
           transformSuccess = convert mark
-          transformMonad :: forall x. RIO env (Either ServerError x) -> ReaderT env (ExceptT ServerError IO) x
+          transformMonad :: forall x. ReaderT env n (Either ServerError x) -> ReaderT env (ExceptT ServerError n) x
           transformMonad = coerce
-          handlerTip :: ReaderT env (ExceptT ServerError IO) handlerResult
+          handlerTip :: ReaderT env (ExceptT ServerError n) handlerResult
           handlerTip = transformMonad do
             tip <- methodTip
             case tip of
@@ -175,14 +178,14 @@ instance Convertible mark source ServerError => ToServerError mark source
 -- with the extra responsability of transforming the methods it \"looks up\" 
 -- into Servant handlers.
 asHandlerCall ::
-  forall conv deps env.
-  conv (RIO env) ->
+  forall conv deps env n.
+  conv (ReaderT env n) ->
   deps ->
-  HandlerCall conv deps env 
+  HandlerCall conv deps env n
 asHandlerCall conv (Call φ) =
   HandlerCall \g -> toHandler conv (φ g)
 
-newtype HandlerCall conv deps env
+newtype HandlerCall conv deps env n
   = HandlerCall
       ( forall
           r
@@ -197,6 +200,7 @@ newtype HandlerCall conv deps env
         ( ToHandler
             conv
             env
+            n
             (methodArgs :: [Type])
             (methodErrors :: [Type])
             methodSuccess
@@ -205,8 +209,8 @@ newtype HandlerCall conv deps env
             (handlerArgs :: [Type])
             handlerResult
             handler,
-          Has r (RIO env) deps
+          Has r (ReaderT env n) deps
         ) =>
-        (r (RIO env) -> method) ->
+        (r (ReaderT env n) -> method) ->
         handler
       )

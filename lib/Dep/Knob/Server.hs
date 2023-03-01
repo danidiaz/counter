@@ -70,8 +70,9 @@ knobNamed name knob = KnobMap $ Map.singleton name (SomeKnob knob)
 
 -- See also "Dep.Server".
 makeKnobServer ::
-  forall env m.
-  ( m ~ RIO env
+  forall env n m.
+  ( Monad n,
+    m ~ ReaderT env n
   ) =>
   KnobMap m ->
   KnobServer m
@@ -80,7 +81,7 @@ makeKnobServer (KnobMap knobs) =
     KnobCollectionAPI
       { allKnobs = do
           values <- for knobs \(SomeKnob knob) -> do
-            conf <- mapReaderT liftIO $ Dep.Knob.inspectKnob knob
+            conf <- mapReaderT lift $ Dep.Knob.inspectKnob knob
             pure $ toJSON conf
           pure $ values & Map.toList & fmap (first fromText) & object,
         knobs = \knobName ->
@@ -88,7 +89,7 @@ makeKnobServer (KnobMap knobs) =
             { inspectKnob =
                 case Map.lookup knobName knobs of
                   Nothing -> throwError err404
-                  Just (SomeKnob knob) -> mapReaderT liftIO do
+                  Just (SomeKnob knob) -> mapReaderT lift do
                     toJSON <$> Dep.Knob.inspectKnob knob,
               setKnob = \confValue ->
                 case Map.lookup knobName knobs of
@@ -96,12 +97,12 @@ makeKnobServer (KnobMap knobs) =
                   Just (SomeKnob knob) ->
                     case parse parseJSON confValue of
                       Error _ -> throwError err400
-                      Success conf -> mapReaderT liftIO do
+                      Success conf -> mapReaderT lift do
                         Dep.Knob.setKnob knob conf $> NoContent,
               resetKnob =
                 case Map.lookup knobName knobs of
                   Nothing -> throwError err404
-                  Just (SomeKnob knob) -> mapReaderT liftIO do
+                  Just (SomeKnob knob) -> mapReaderT lift do
                     Dep.Knob.resetKnob knob $> NoContent
             }
       }
