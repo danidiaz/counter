@@ -52,17 +52,18 @@ import Servant (NamedRoutes, err400)
 import Servant.API (NoContent (..))
 import Servant.Server
   ( HasServer (ServerT),
-    err404,
+    err404, ServerError,
   )
+import GHC.TypeLits
+
+type KnobServer :: (Type -> Type) -> Type
+newtype KnobServer m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCollectionAPI) (H m)}
 
 data SomeKnob m where
   SomeKnob :: forall conf m. (FromJSON conf, ToJSON conf) => Knob conf m -> SomeKnob m
 
 newtype KnobMap m = KnobMap (Map KnobName (SomeKnob m))
   deriving newtype (Semigroup, Monoid)
-
-type KnobServer :: Type -> (Type -> Type) -> Type
-newtype KnobServer env m = KnobServer {knobServer :: ServerT (NamedRoutes KnobCollectionAPI) (RHandler env)}
 
 knobNamed :: forall conf m. (FromJSON conf, ToJSON conf) => KnobName -> Knob conf m -> KnobMap m
 knobNamed name knob = KnobMap $ Map.singleton name (SomeKnob knob)
@@ -73,7 +74,7 @@ makeKnobServer ::
   ( m ~ RIO env
   ) =>
   KnobMap m ->
-  KnobServer env m
+  KnobServer m
 makeKnobServer (KnobMap knobs) =
   KnobServer $
     KnobCollectionAPI
@@ -104,3 +105,7 @@ makeKnobServer (KnobMap knobs) =
                     Dep.Knob.resetKnob knob $> NoContent
             }
       }
+
+type family H (m :: Type -> Type) :: Type -> Type where
+  H (ReaderT env n) = ReaderT env (ExceptT ServerError n)
+  H _ = TypeError ('Text "Oops")

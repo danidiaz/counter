@@ -91,8 +91,8 @@ class
 
 instance
   ( Multicurryable Either methodErrors methodSuccess methodResult,
-    Multicurryable (->) methodArgs (RIO env methodResult) method,
-    Multicurryable (->) handlerArgs (RHandler env handlerResult) handler,
+    Multicurryable (->) methodArgs (ReaderT env IO methodResult) method,
+    Multicurryable (->) handlerArgs (ReaderT env (ExceptT ServerError IO) handlerResult) handler,
     --
     AllZip (Convertible mark) handlerArgs methodArgs,
     All (ToServerError mark) methodErrors,
@@ -135,9 +135,9 @@ instance
             pure $ collapse_NS mappedErrors
           transformSuccess :: methodSuccess -> RIO env handlerResult
           transformSuccess = convert mark
-          transformMonad :: forall x. RIO env (Either ServerError x) -> RHandler env x
+          transformMonad :: forall x. RIO env (Either ServerError x) -> ReaderT env (ExceptT ServerError IO) x
           transformMonad = coerce
-          handlerTip :: RHandler env handlerResult
+          handlerTip :: ReaderT env (ExceptT ServerError IO) handlerResult
           handlerTip = transformMonad do
             tip <- methodTip
             case tip of

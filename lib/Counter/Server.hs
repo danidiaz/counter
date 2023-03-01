@@ -44,6 +44,22 @@ import Servant.Server
     err500,
   )
 import Dep.Clock
+import Control.Monad.Trans.Reader (ReaderT)
+import Control.Monad.Trans.Except (ExceptT)
+import GHC.TypeLits (TypeError, ErrorMessage (Text))
+
+-- | The type parameters here are a bit weird compared to other components.
+--
+-- @m@ is not really used as the server monad.
+--
+-- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
+-- instances require a 'ReaderT' monad to work.
+type CounterServer :: (Type -> Type) -> Type
+newtype CounterServer m = CounterServer {counterServer :: ServerT API (H m)}
+
+type family H (m :: Type -> Type) :: Type -> Type where
+  H (ReaderT env n) = ReaderT env (ExceptT ServerError n)
+  H _ = TypeError ('Text "Oops")
 
 -- | We construct a Servant server by extracting components from the dependency
 -- injection context and using them as handlers.
@@ -77,7 +93,7 @@ makeCounterServer ::
   -- |
   deps ->
   -- |
-  CounterServer env m
+  CounterServer m
 makeCounterServer conv (asHandlerCall conv -> HandlerCall η) = CounterServer
       \(_ :: User) ->
         CounterCollectionAPI
@@ -147,13 +163,3 @@ instance Convertible C Model.CounterId API.CounterId where
 -- | DTO mapping.
 instance Convertible C () NoContent where
   convert = convertConst NoContent
-
--- | The type parameters here are a bit weird compared to other components.
---
--- @m@ is not really used as the server monad.
---
--- And we don't use @env@ for anything. It's only there becasue 'ToHandler'
--- instances require a 'ReaderT' monad to work.
-type CounterServer :: Type -> (Type -> Type) -> Type
-newtype CounterServer env m = CounterServer {counterServer :: ServerT API (RHandler env)}
-

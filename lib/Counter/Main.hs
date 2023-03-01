@@ -77,9 +77,9 @@ data Deps_ phase m = Deps
     _increaseCounter :: phase (IncreaseCounter m),
     _deleteCounter :: phase (DeleteCounter m),
     _createCounter :: phase (CreateCounter m),
-    _server :: phase (CounterServer Env m),
-    _knobServer :: phase (KnobServer Env m),
-    _runner :: phase (ServantRunner Env m)
+    _server :: phase (CounterServer m),
+    _knobServer :: phase (KnobServer m),
+    _runner :: phase (ServantRunner m)
   }
   deriving stock (Generic)
   deriving anyclass (FieldsFindableByType, Phased)

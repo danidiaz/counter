@@ -39,7 +39,7 @@ import Servant.Server
       serveWithContext,
       BasicAuthCheck(BasicAuthCheck),
       BasicAuthResult(Authorized, Unauthorized),
-      Context(..) )
+      Context(..), Handler (Handler) )
 import Data.Kind
 import Network.Wai.Handler.Warp (run)
 import Dep.Has
@@ -51,6 +51,7 @@ import GHC.Generics (Generic)
 import Servant.API
 import Dep.Knob.API
 import Dep.Knob.Server
+import GHC.TypeLits
 
 -- | The full API adds some "frameworky" endpoints to the "domain" API that
 -- deals with counters.
@@ -78,21 +79,25 @@ newtype Conf = Conf {
     } deriving stock (Show, Generic)
       deriving anyclass FromJSON
 
-type ServantRunner :: Type -> (Type -> Type) -> Type
-newtype ServantRunner env m = ServantRunner {runServer :: env -> IO () }
+type ServantRunner :: (Type -> Type) -> Type
+newtype ServantRunner m = ServantRunner {runServer :: RuntimeEnv m -> IO () }
+
+type family RuntimeEnv (n :: Type -> Type) :: Type where
+  RuntimeEnv (ReaderT env n) = env
+  RuntimeEnv _ = TypeError ('Text "Oops")
 
 -- | See also "Dep.Server".
 makeServantRunner ::
   forall m deps env.
   ( m ~ RIO env,
-    Has (CounterServer env) m deps,
-    Has (KnobServer env) m deps
+    Has CounterServer m deps,
+    Has KnobServer m deps
   ) =>
   -- | 
   Conf ->
   -- |
   deps -> 
-  ServantRunner env m
+  ServantRunner m
 makeServantRunner Conf {port} deps = ServantRunner {
     runServer = \env ->
         let CounterServer {counterServer} = dep deps
@@ -102,7 +107,7 @@ makeServantRunner Conf {port} deps = ServantRunner {
                 hoistServerWithContext
                     (Proxy @FullAPI)
                     (Proxy @'[BasicAuthCheck User])
-                    (`runReaderT` env)
+                    (\s -> Handler $ s `runReaderT` env)
                     fullServer
             app :: Application
             app = serveWithContext (Proxy @FullAPI) basicAuthServerContext hoistedServer
